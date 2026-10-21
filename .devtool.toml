@@ -1,0 +1,196 @@
+# Guardian's canonical repository contract, validated against Devtool 2026-10-21.
+# All commands are routed through the generated Devtool wrapper; no secondary scheduler.
+[project]
+runner = "command"
+platform = "android"
+
+[workspace]
+default_target = "guardian"
+
+[workspace.scheduler]
+parallel = false
+max_parallel_nodes = 1
+
+[wrapper]
+schema = 2
+default_command = "check"
+
+[wrapper.commands.check]
+description = "Devtool DAG: source checks, isolated tests, WebUI tests, build and archive verification"
+workflow = "check"
+target = "guardian"
+
+[wrapper.commands.test]
+description = "Run hermetic Guardian and WebUI tests via the Devtool workflow graph"
+workflow = "test"
+target = "guardian"
+
+[wrapper.commands.syntax]
+description = "POSIX shell, Python, TOML and repository-policy syntax"
+workflow = "syntax"
+target = "guardian"
+
+[wrapper.commands.webui]
+description = "Test complete KernelSU WebUI inventory and scopes"
+workflow = "webui"
+target = "guardian"
+
+[wrapper.commands.build]
+description = "Build and verify deterministic installable/source ZIPs"
+workflow = "build"
+target = "guardian"
+
+[wrapper.commands.install]
+description = "Build, verify then flash via ksud in an interactive Termux terminal"
+workflow = "install"
+target = "guardian"
+
+[wrapper.commands.device-check]
+description = "Read-only Guardian device acceptance with Termux clipboard output"
+workflow = "device-check"
+target = "guardian"
+
+[wrapper.commands.preflight]
+description = "Run Devtool-native workflow preflight through a first-class job"
+workflow = "preflight"
+target = "guardian"
+
+[wrapper.commands.doctor]
+description = "Run Devtool-native repository doctor through a first-class job"
+workflow = "doctor"
+target = "guardian"
+
+[wrapper.commands.validate]
+description = "Run Devtool-native validation planning/execution"
+devtool = "validate"
+target = "guardian"
+allow_passthrough = true
+
+[targets.guardian]
+runner = "command"
+platform = "android"
+root = "."
+execution_environment = "native-termux"
+inputs = ["guardian.sh", "lib/**", "webroot/**", "tests/**", "tools/**", "module.prop", ".devtool.toml"]
+outputs = ["dist/**"]
+
+[targets.guardian.jobs.devtool-preflight]
+runner = "command"
+command = ["devtool", "-r", ".", "preflight"]
+metadata = { read_only = true, native_devtool_operation = true }
+
+[targets.guardian.jobs.devtool-doctor]
+runner = "command"
+command = ["devtool", "-r", ".", "doctor"]
+metadata = { read_only = true, native_devtool_operation = true }
+
+[targets.guardian.jobs.source-check]
+runner = "command"
+command = ["python3", "tools/check_repo.py"]
+inputs = ["**/*.sh", "**/*.py", "webroot/**", ".devtool.toml", "module.prop"]
+metadata = { read_only = true, family = "preflight" }
+
+[targets.guardian.jobs.unit-tests]
+runner = "command"
+command = ["python3", "tools/run_host_tests.py", "--workers", "2", "--timeout", "180"]
+inputs = ["guardian.sh", "lib/**", "tests/test_guardian.py", "tools/run_host_tests.py"]
+metadata = { read_only = true, family = "unit" }
+
+[targets.guardian.jobs.contract-tests]
+runner = "command"
+command = ["python3", "-m", "unittest", "discover", "-s", "tests", "-p", "test_devtool_contract.py", "-q"]
+inputs = [".devtool.toml", "tools/**", "tests/test_devtool_contract.py", "devtoolw", "devtoolw.cmd"]
+metadata = { read_only = true, family = "contract" }
+
+[targets.guardian.jobs.webui-tests]
+runner = "command"
+command = ["node", "tests/test_webui.js"]
+inputs = ["webroot/**", "tests/test_webui.js"]
+metadata = { read_only = true, family = "webui" }
+
+[targets.guardian.jobs.package]
+runner = "command"
+command = ["python3", "tools/build.py"]
+inputs = ["guardian.sh", "lib/**", "webroot/**", "module.prop", "tools/build.py", "README.md", "docs/**"]
+outputs = ["dist/**"]
+metadata = { release_candidate = true, device_qualified = false }
+
+[targets.guardian.jobs.verify-package]
+runner = "command"
+command = ["python3", "tools/verify_build.py"]
+inputs = ["dist/**", "tools/verify_build.py", "module.prop"]
+metadata = { read_only = true, artifact_digest_gate = true }
+
+[targets.guardian.jobs.flash-ksu]
+runner = "command"
+command = ["sh", "tools/install.sh"]
+inputs = ["dist/**", "tools/install.sh", "tools/verify_build.py"]
+metadata = { interactive_terminal_required = true, mutations = "explicit-root-module-install", never_use_in_ci = true }
+
+[targets.guardian.jobs.device-diagnostics]
+runner = "command"
+command = ["sh", "tools/device_check.sh"]
+inputs = ["tools/device_check.sh"]
+metadata = { root_required = true, read_only = true, clipboard = "termux" }
+
+# Workflow DAG with explicit prerequisites; no parallel writes to dist/.
+[targets.guardian.workflows]
+preflight = [{ id = "devtool-preflight", ref = "job:devtool-preflight", depends_on = [] }]
+doctor = [{ id = "devtool-doctor", ref = "job:devtool-doctor", depends_on = [] }]
+syntax = [{ id = "preflight", ref = "job:source-check", depends_on = [] }]
+webui = [{ id = "ui", ref = "job:webui-tests", depends_on = [] }]
+test = [
+  { id = "preflight", ref = "job:source-check", depends_on = [] },
+  { id = "unit", ref = "job:unit-tests", depends_on = ["preflight"] },
+  { id = "contract", ref = "job:contract-tests", depends_on = ["preflight"] },
+  { id = "ui", ref = "job:webui-tests", depends_on = ["preflight"] },
+]
+build = [
+  { id = "preflight", ref = "job:source-check", depends_on = [] },
+  { id = "package", ref = "job:package", depends_on = ["preflight"] },
+  { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
+]
+check = [
+  { id = "preflight", ref = "job:source-check", depends_on = [] },
+  { id = "unit", ref = "job:unit-tests", depends_on = ["preflight"] },
+  { id = "contract", ref = "job:contract-tests", depends_on = ["preflight"] },
+  { id = "ui", ref = "job:webui-tests", depends_on = ["preflight"] },
+  { id = "package", ref = "job:package", depends_on = ["unit", "contract", "ui"] },
+  { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
+]
+install = [
+  { id = "preflight", ref = "job:source-check", depends_on = [] },
+  { id = "package", ref = "job:package", depends_on = ["preflight"] },
+  { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
+  { id = "install", ref = "job:flash-ksu", depends_on = ["verify"] },
+]
+device-check = [{ id = "device", ref = "job:device-diagnostics", depends_on = [] }]
+
+# First-class named test catalog (also selectable with canonical `devtool test`).
+[[test]]
+id = "guardian-shell"
+name = "Guardian source syntax and repository policy"
+runner = "command"
+command = ["python3", "tools/check_repo.py"]
+timeout_seconds = 120
+
+[[test]]
+id = "guardian-python"
+name = "Hermetic fake-Vector regression"
+runner = "command"
+command = ["python3", "tools/run_host_tests.py", "--workers", "2", "--timeout", "180"]
+timeout_seconds = 7200
+
+[[test]]
+id = "guardian-devtool-contract"
+name = "Devtool workflow/wrapper/install provenance tests"
+runner = "command"
+command = ["python3", "-m", "unittest", "discover", "-s", "tests", "-p", "test_devtool_contract.py", "-q"]
+timeout_seconds = 120
+
+[[test]]
+id = "guardian-webui"
+name = "KernelSU WebUI full-output and scope regression"
+runner = "command"
+command = ["node", "tests/test_webui.js"]
+timeout_seconds = 120

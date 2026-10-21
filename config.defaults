@@ -1,0 +1,28 @@
+# These values are read as root from a root-only directory.
+# 0 = observe only; turn on explicitly with: guardian.sh arm
+AUTO_RECOVERY=0
+# Number of consecutive failed hardware boots before attempting recovery.
+FAILURE_THRESHOLD=2
+# Stable SystemUI observation time after sys.boot_completed.
+STABILITY_SECONDS=60
+# Seconds to wait for Android to report a completed boot.
+BOOT_WAIT_SECONDS=210
+# Fail closed if SystemUI is missing/restarts while stability is checked.
+CHECK_SYSTEMUI=1
+# Passive crash event sampler (no disabling/quarantine; every 60 seconds).
+PASSIVE_CRASH_MONITOR=1
+CRASH_POLL_SECONDS=60
+# Time window for non-causal crash correlation reports.
+CRASH_WINDOW_SECONDS=300
+
+# Device offline-restore acceptance gate. Must stay 0 until disposable-device recovery is qualified.
+RECOVERY_DEVICE_QUALIFIED=0
+
+# User-confirmed unrelated crashes; excluded from any future recovery decisions.
+CRASH_EXCLUDE_PACKAGES=com.openai.chatgpt
+
+# Read-only Vector state/scope sampling every 180 seconds after stable boot.
+HISTORY_MONITOR=1
+HISTORY_POLL_SECONDS=180
+# Strict maximum age of a prior checkpoint used for crash correlation.
+HISTORY_MAX_AGE_SECONDS=240

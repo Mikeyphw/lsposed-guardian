@@ -1,0 +1,6 @@
+id=lsposed_guardian
+name=LSPosed Guardian
+version=0.9.0
+versionCode=900
+author=Community prototype
+description=Full-output WebUI, isolated quarantine/recovery fault labs and read-only qualification gates.

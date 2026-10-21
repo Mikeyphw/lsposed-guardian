@@ -1,0 +1,39 @@
+name: Guardian release candidate
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify tag matches module.prop
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            expected="v$(sed -n 's/^version=//p' module.prop | head -n 1)"
+            [[ "$GITHUB_REF_NAME" == "$expected" ]] || { echo "Tag/version mismatch: $GITHUB_REF_NAME != $expected"; exit 1; }
+          fi
+      - run: python3 tools/check_repo.py
+      - run: python3 -m unittest discover -s tests -p test_devtool_contract.py -q
+      - run: node tests/test_webui.js
+      - run: python3 tools/run_host_tests.py --workers 2 --timeout 180
+      - run: python3 tools/build.py
+      - run: python3 tools/verify_build.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guardian-release-candidate-unqualified
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+# Intentionally no automatic GitHub Release: real-device early-boot restoration is UNQUALIFIED.

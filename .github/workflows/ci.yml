@@ -1,0 +1,43 @@
+name: Guardian host qualification
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: guardian-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Source, shell and TOML contracts
+        run: python3 tools/check_repo.py
+      - name: Devtool wrapper/repo contracts
+        run: python3 -m unittest discover -s tests -p test_devtool_contract.py -q
+      - name: WebUI regression
+        run: node tests/test_webui.js
+      - name: Full fake-Vector safety regression
+        run: python3 tools/run_host_tests.py --workers 2 --timeout 180
+      - name: Deterministic package
+        run: python3 tools/build.py
+      - name: Verify SHA-256 and install archive contents
+        run: python3 tools/verify_build.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: guardian-host-qualification
+          path: |
+            dist/*
+          if-no-files-found: warn
+          retention-days: 14

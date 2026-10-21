@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>LSPosed Guardian</title>
+  <link rel="stylesheet" href="main.css">
+  <script defer src="main.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="eyebrow">VECTOR · ROOT RECOVERY MONITOR</div>
+      <div class="top"><h1>Guardian <span id="version">v0.9</span></h1><button id="refresh" type="button">Refresh</button></div>
+      <p>Diagnostics and review only. No automatic module changes.</p>
+    </header>
+    <section class="stats" aria-label="Guardian health">
+      <article><span>Recovery</span><strong id="mode">—</strong><small id="qual">Qualification unknown</small></article>
+      <article><span>Historical samples</span><strong id="samples">—</strong><small id="historyhealth">—</small></article>
+      <article><span>Collector</span><strong id="collector">—</strong><small>Current boot heartbeat</small></article>
+      <article><span>Quarantines</span><strong id="quarantine">—</strong><small id="pending">—</small></article>
+    </section>
+    <nav class="tabs" aria-label="Sections">
+      <button type="button" class="active" data-tab="health">Health</button>
+      <button type="button" data-tab="modules">Modules</button>
+      <button type="button" data-tab="history">History</button>
+      <button type="button" data-tab="review">Review</button>
+    </nav>
+    <section id="health" class="section active">
+      <h2>Recovery qualification</h2><p class="hint">Sandbox passes do not qualify live early-boot restoration.</p><pre id="gates">Loading…</pre>
+      <h2>Recovery integrity</h2><pre id="integrity">Loading…</pre>
+      <h2>Boot health</h2><pre id="doctor">Loading…</pre>
+    </section>
+    <section id="modules" class="section">
+      <h2>Vector modules</h2>
+      <p class="hint">All installed Xposed modules, enabled and disabled. This interface never toggles hooks.</p>
+      <p id="modulecount" class="module-count">Loading inventory…</p>
+      <div class="module-controls"><input id="modulesearch" type="search" placeholder="Search module package" aria-label="Search modules" autocomplete="off" spellcheck="false"><select id="modulefilter" aria-label="Filter module status"><option value="all">All</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></div>
+      <p id="modulewarning" class="module-warning" role="status"></p>
+      <div id="modulelist" class="module-list">Loading…</div>
+      <h2>Module scope inspection</h2><p class="hint">Select Scopes on any module. Reading scopes cannot change any module.</p><pre id="modulescope">Choose a module above to inspect its explicit scopes.</pre>
+      <h2>Quarantine records</h2><pre id="qstatus">Loading…</pre>
+    </section>
+    <section id="history" class="section">
+      <h2>Sampled configuration</h2><p class="hint">Samples represent observed states, not module activation timestamps.</p><pre id="hist">Loading…</pre>
+      <h2>Collector heartbeat</h2><pre id="heartbeat">Loading…</pre>
+    </section>
+    <section id="review" class="section">
+      <h2>Investigate a process</h2>
+      <p class="hint">Only review candidates with recorded historical evidence. A scope match cannot prove crash causality.</p>
+      <label for="target">Package or system_server</label>
+      <div class="inline"><input id="target" value="com.android.systemui" spellcheck="false" autocapitalize="off" autocomplete="off"><button id="analyze" type="button">Review</button></div>
+      <pre id="analysis">No analysis yet.</pre>
+      <p class="notice">Quarantine, rollback, snapshots and restoration require explicit commands outside this dashboard. Offline restoration remains unqualified.</p>
+    </section>
+    <p id="message" role="status" aria-live="polite">Connecting to KernelSU…</p>
+    <footer>LSPosed Guardian · Device evidence, not causal attribution</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,31 @@
+# Native and Python outputs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+.env
+.env.*
+!.env.example
+
+# Build and Devtool runtime/evidence (configuration and wrapper are tracked)
+dist/*
+!dist/.gitkeep
+.devtool/
+.devtool-wrapper.lock
+.devtool-run*/
+.devtool-cache/
+
+# Local archives, credentials and device captures
+*.tar.gz
+*.log
+*.sqlite
+*.db
+*.db-wal
+*.db-shm
+*secret*
+*.pem
+*.key
+*.p12
+device-evidence/
+.DS_Store
