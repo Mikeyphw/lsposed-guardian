@@ -41,7 +41,7 @@ workflow = "build"
 target = "guardian"
 
 [wrapper.commands.install]
-description = "Build, verify then flash via ksud in an interactive Termux terminal"
+description = "Full regression, qualification, build, verify, then interactive KernelSU install"
 workflow = "install"
 target = "guardian"
 
@@ -108,6 +108,19 @@ command = ["node", "tests/test_webui.js"]
 inputs = ["webroot/**", "tests/test_webui.js"]
 metadata = { read_only = true, family = "webui" }
 
+[targets.guardian.jobs.ci-parity]
+runner = "command"
+command = ["python3", "tools/check_ci_parity.py"]
+inputs = [".devtool.toml", ".github/workflows/**", "tools/check_ci_parity.py"]
+metadata = { read_only = true, ci_mirror_contract = true }
+
+[targets.guardian.jobs.host-qualification]
+runner = "command"
+command = ["python3", "tools/qualify_host.py"]
+inputs = ["dist/host-test-results.json", "tests/test_guardian.py", "tools/qualify_host.py", ".devtool.toml"]
+outputs = ["dist/host-qualification.json"]
+metadata = { read_only = true, host_evidence_gate = true, device_qualified = false }
+
 [targets.guardian.jobs.package]
 runner = "command"
 command = ["python3", "tools/build.py"]
@@ -144,6 +157,7 @@ test = [
   { id = "unit", ref = "job:unit-tests", depends_on = ["preflight"] },
   { id = "contract", ref = "job:contract-tests", depends_on = ["preflight"] },
   { id = "ui", ref = "job:webui-tests", depends_on = ["preflight"] },
+  { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
 ]
 build = [
   { id = "preflight", ref = "job:source-check", depends_on = [] },
@@ -155,12 +169,19 @@ check = [
   { id = "unit", ref = "job:unit-tests", depends_on = ["preflight"] },
   { id = "contract", ref = "job:contract-tests", depends_on = ["preflight"] },
   { id = "ui", ref = "job:webui-tests", depends_on = ["preflight"] },
-  { id = "package", ref = "job:package", depends_on = ["unit", "contract", "ui"] },
+  { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
+  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity"] },
+  { id = "package", ref = "job:package", depends_on = ["qualification"] },
   { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
 ]
 install = [
   { id = "preflight", ref = "job:source-check", depends_on = [] },
-  { id = "package", ref = "job:package", depends_on = ["preflight"] },
+  { id = "unit", ref = "job:unit-tests", depends_on = ["preflight"] },
+  { id = "contract", ref = "job:contract-tests", depends_on = ["preflight"] },
+  { id = "ui", ref = "job:webui-tests", depends_on = ["preflight"] },
+  { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
+  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity"] },
+  { id = "package", ref = "job:package", depends_on = ["qualification"] },
   { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
   { id = "install", ref = "job:flash-ksu", depends_on = ["verify"] },
 ]

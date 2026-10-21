@@ -61,3 +61,7 @@ This repository contains the consolidated repaired **Guardian 0.9.0** source (in
 ```
 
 **Safety:** `install` modifies a KernelSU module and requires explicit invocation. It does not reboot. The real early-boot restore gate is not qualified; leave Guardian in OBSERVE mode. CI artifacts are release candidates, not device-certified releases. Read [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and [docs/WRAPPER.md](docs/WRAPPER.md).
+
+### Repository qualification gate (post-bootstrap hardening)
+
+The `./devtoolw install` workflow now runs the full test DAG and exact-evidence qualification before flashing. The public GitHub Actions jobs are a checked host-compatible mirror, not a substitute for native Devtool execution. Neither host acceptance nor isolated labs qualify early-boot restoration. See `docs/DEVTOOL_INTEGRATION_IMPROVEMENTS.md`.

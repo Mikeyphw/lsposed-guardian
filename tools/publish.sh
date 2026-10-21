@@ -14,6 +14,14 @@ git rev-parse --verify HEAD >/dev/null 2>&1 || { echo 'No local commit; run git 
 if git remote get-url origin >/dev/null 2>&1; then
   echo 'An origin remote already exists; refusing to publish over it.' >&2; exit 2
 fi
+# Publishing a PUBLIC source repository still needs a recent, exact-host-source qualification.
+# This only reads evidence and wrapper metadata: no root command or Android mutation.
+command -v devtool >/dev/null 2>&1 || { echo 'Devtool is required for public-repo qualification' >&2; exit 127; }
+python3 tools/check_ci_parity.py
+python3 tools/qualify_host.py
+python3 tools/verify_build.py
+devtool -r . wrapper seal --json >/dev/null || { echo 'Devtool wrapper seal failed' >&2; exit 2; }
+echo 'PASS_GUARDIAN_PUBLIC_REPO_HOST_GATE (device recovery still UNQUALIFIED)'
 echo "Creating PUBLIC GitHub repository: $(gh api user --jq .login)/$NAME"
 gh repo create "$NAME" --public --source=. --remote=origin --push
 gh repo view --json nameWithOwner,url,visibility --jq '{nameWithOwner,url,visibility}'

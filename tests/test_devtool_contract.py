@@ -18,10 +18,25 @@ class DevtoolContractTests(unittest.TestCase):
 
  def test_install_workflow_has_integrity_prerequisite(self):
   steps=TARGET['workflows']['install']
-  self.assertEqual([x['id'] for x in steps],['preflight','package','verify','install'])
+  self.assertEqual([x['id'] for x in steps],['preflight','unit','contract','ui','ci-parity','qualification','package','verify','install'])
   self.assertEqual(steps[-1]['ref'],'job:flash-ksu')
   self.assertEqual(steps[-1]['depends_on'],['verify'])
   self.assertEqual(steps[-2]['ref'],'job:verify-package')
+
+ def test_install_requires_full_qualification_graph(self):
+  steps=TARGET['workflows']['install']
+  q=next(item for item in steps if item['id']=='qualification')
+  self.assertEqual(set(q['depends_on']),{'unit','contract','ui','ci-parity'})
+  p=next(item for item in steps if item['id']=='package')
+  self.assertEqual(p['depends_on'],['qualification'])
+  src=(ROOT/'tools/qualify_host.py').read_text()
+  self.assertIn('Tested source differs from current Guardian runtime',src)
+  self.assertIn('Duplicate test result names',src)
+
+ def test_ci_parity_checker(self):
+  p=subprocess.run(['python3',str(ROOT/'tools/check_ci_parity.py')],cwd=ROOT,text=True,capture_output=True,timeout=10)
+  self.assertEqual(p.returncode,0,p.stderr)
+  self.assertIn('PASS_GUARDIAN_CI_MIRROR_MATCHES_DEVTOOL_CHECK_DAG',p.stdout)
 
  def test_install_not_auto_invoked_in_check_or_ci(self):
   for action in ('check','test','build'):
@@ -40,13 +55,38 @@ class DevtoolContractTests(unittest.TestCase):
   self.assertIn('tools/verify_build.py',script)
 
  def test_dry_run_has_no_root_mutation(self):
-  if not (ROOT/'dist'/'build-evidence.json').exists():
-   self.skipTest('Build artifacts not generated yet')
-  env=__import__('os').environ.copy()
-  env['GUARDIAN_INSTALL_DRY_RUN']='1'
-  p=subprocess.run(['sh',str(ROOT/'tools/install.sh')],cwd=ROOT,env=env,text=True,capture_output=True,timeout=15)
-  self.assertEqual(p.returncode,0,p.stdout+p.stderr)
-  self.assertIn('PASS_GUARDIAN_INSTALL_DRY_RUN',p.stdout)
+  # Build disposable artifacts so an old dist/ cannot fail the contract tests.
+  import tempfile, shutil, os
+  with tempfile.TemporaryDirectory(prefix='guardian-install-contract-') as d:
+   target=pathlib.Path(d)/'repo'
+   shutil.copytree(ROOT,target,ignore=shutil.ignore_patterns('dist','.git','__pycache__','.devtool','.pytest_cache'))
+   p=subprocess.run(['python3','tools/build.py'],cwd=target,text=True,capture_output=True,timeout=15)
+   self.assertEqual(p.returncode,0,p.stdout+p.stderr)
+   env=os.environ.copy()
+   env['GUARDIAN_INSTALL_DRY_RUN']='1'
+   p=subprocess.run(['sh','tools/install.sh'],cwd=target,env=env,text=True,capture_output=True,timeout=15)
+   self.assertEqual(p.returncode,0,p.stdout+p.stderr)
+   self.assertIn('PASS_GUARDIAN_INSTALL_DRY_RUN',p.stdout)
+
+ def test_host_qualification_rejects_untrue_evidence(self):
+  import importlib.util, sys
+  sys.path.insert(0,str(ROOT/'tools'))
+  spec=importlib.util.spec_from_file_location('guardian_qualify',ROOT/'tools/qualify_host.py')
+  module=importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(module)
+  tests=module.expected_names()
+  from importlib.util import spec_from_file_location, module_from_spec
+  si_spec=spec_from_file_location('source_inventory',ROOT/'tools/source_inventory.py')
+  si=module_from_spec(si_spec);si_spec.loader.exec_module(si)
+  good={'schema_version':2,'total':len(tests),'passed':len(tests),'failed':0,'source_inventory':si.inventory(),'source_fingerprint':si.fingerprint(),'results':[{'name':x,'status':'PASS'} for x in tests]}
+  self.assertEqual(module.verify(good,tests),len(tests))
+  for bad in (
+   {**good,'passed':len(tests)-1},
+   {**good,'results':good['results'][:-1]},
+   {**good,'results':good['results']+[good['results'][0]]},
+   {**good,'results':[{**good['results'][0],'status':'TIMEOUT'},*good['results'][1:]]},
+  ):
+   with self.assertRaises(AssertionError):module.verify(bad,tests)
 
  def test_device_checks_clipboard_complete_stderr(self):
   script=(ROOT/'tools/device_check.sh').read_text()
@@ -96,6 +136,8 @@ class DevtoolContractTests(unittest.TestCase):
   self.assertIn('gh repo create',src)
   self.assertIn('--public',src)
   self.assertIn('--source=.',src)
+  for gate in ('tools/check_ci_parity.py','tools/qualify_host.py','tools/verify_build.py','wrapper seal --json'):
+   self.assertIn(gate,src)
   for name in ('check','build','install'):
    self.assertNotIn('publish',str(TARGET['workflows'][name]).lower())
 

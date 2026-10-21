@@ -29,14 +29,16 @@ jobs:
         run: node tests/test_webui.js
       - name: Full fake-Vector safety regression
         run: python3 tools/run_host_tests.py --workers 2 --timeout 180
+      - name: Validate complete host-test evidence (Devtool DAG parity)
+        run: python3 tools/qualify_host.py
       - name: Deterministic package
         run: python3 tools/build.py
       - name: Verify SHA-256 and install archive contents
         run: python3 tools/verify_build.py
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: success()
         with:
-          name: guardian-host-qualification
+          name: guardian-host-qualified-device-unverified
           path: |
             dist/*
           if-no-files-found: warn

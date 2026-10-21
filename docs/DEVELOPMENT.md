@@ -17,7 +17,7 @@ Repository root: `~/Code/lsposed-guardian` on the owner's Termux device. Current
 ./devtoolw device-check      # read-only with clipboard
 ```
 
-Devtool is the sole workflow DAG and execution authority. The repository exposes target `guardian`, typed jobs, DAG dependencies, a stable wrapper schema 2, and first-class `[[test]]` declarations. `./devtoolw check` is the combined gate. `./devtoolw install` deliberately does **not** run the long tests again; it performs source validation, builds fresh, checks SHA-256/ZIP contents and passes the verified artifact to `ksud` in the existing terminal. To require full checks before installation run `./devtoolw check && ./devtoolw install`.
+Devtool is the sole workflow DAG and execution authority. The repository exposes target `guardian`, typed jobs, DAG dependencies, a stable wrapper schema 2, and first-class `[[test]]` declarations. `./devtoolw check` is the combined gate. `./devtoolw install` now **requires the complete host regression, WebUI and Devtool contract suite**, exact-test-inventory qualification, package build and SHA-256 verification before offering the verified archive to interactive `ksud`. This can take several minutes. A failed/timeout test prevents installation; there is no implicit test-skipping shortcut. Hosted GitHub Actions mirror the same commands with a `ci-parity` check, but do not claim the local Devtool CLI ran on Ubuntu.
 
 ## Safety gates
 

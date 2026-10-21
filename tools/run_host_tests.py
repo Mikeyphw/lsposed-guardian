@@ -8,6 +8,7 @@ import pathlib
 import subprocess
 import sys
 import time
+from source_inventory import inventory, fingerprint
 
 parser=argparse.ArgumentParser()
 parser.add_argument('--workers',type=int,default=2)
@@ -19,6 +20,7 @@ spec = importlib.util.spec_from_file_location('test_guardian', source)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 names = sorted(n for n in dir(module.GuardianTests) if n.startswith('test_'))
+source_inventory_before=inventory()
 
 def run_one(name):
     started=time.monotonic()
@@ -37,7 +39,11 @@ with ThreadPoolExecutor(max_workers=max(1,min(args.workers,4))) as pool:
         results.append(result)
         print(f"{result['status']:7} {result['name']} ({result['elapsed_seconds']}s)", flush=True)
 results.sort(key=lambda r:r['name'])
-evidence={'total':len(results),'passed':sum(r['status']=='PASS' for r in results),'failed':sum(r['status']!='PASS' for r in results),'results':results}
+evidence={'schema_version':2,'total':len(results),'passed':sum(r['status']=='PASS' for r in results),'failed':sum(r['status']!='PASS' for r in results),'source_inventory':source_inventory_before,'source_fingerprint':fingerprint(source_inventory_before),'results':results}
+if inventory()!=source_inventory_before:
+    evidence['failed']+=1
+    evidence['source_changed_during_run']=True
+    print('FAIL_GUARDIAN_SOURCE_CHANGED_DURING_REGRESSION',flush=True)
 (root/'dist').mkdir(exist_ok=True)
 (root/'dist'/'host-test-results.json').write_text(json.dumps(evidence,indent=2)+'\n')
 print('TOTAL',evidence['passed'],'/',evidence['total'])

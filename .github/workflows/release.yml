@@ -28,6 +28,7 @@ jobs:
       - run: python3 -m unittest discover -s tests -p test_devtool_contract.py -q
       - run: node tests/test_webui.js
       - run: python3 tools/run_host_tests.py --workers 2 --timeout 180
+      - run: python3 tools/qualify_host.py
       - run: python3 tools/build.py
       - run: python3 tools/verify_build.py
       - uses: actions/upload-artifact@v4
