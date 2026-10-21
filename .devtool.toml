@@ -45,6 +45,26 @@ description = "Full regression, qualification, build, verify, then interactive K
 workflow = "install"
 target = "guardian"
 
+[wrapper.commands.live-quarantine-preview]
+description = "Read-only gate preflight for RememberMySort; never toggles a module"
+workflow = "live-quarantine-preview"
+target = "guardian"
+
+[wrapper.commands.live-quarantine-gate]
+description = "EXPLICIT LIVE MUTATION: journaled RememberMySort disable then rollback, with device evidence"
+workflow = "live-quarantine-gate"
+target = "guardian"
+
+[wrapper.commands.early-boot-lab]
+description = "Hermetic SQLite WAL transaction and restart-interruption simulation; no live restore"
+workflow = "early-boot-lab"
+target = "guardian"
+
+[wrapper.commands.early-boot-preflight]
+description = "Read-only early-boot recovery environment inventory; NEVER attempts restoration"
+workflow = "early-boot-preflight"
+target = "guardian"
+
 [wrapper.commands.device-check]
 description = "Read-only Guardian device acceptance with Termux clipboard output"
 workflow = "device-check"
@@ -140,6 +160,31 @@ command = ["sh", "tools/install.sh"]
 inputs = ["dist/**", "tools/install.sh", "tools/verify_build.py"]
 metadata = { interactive_terminal_required = true, mutations = "explicit-root-module-install", never_use_in_ci = true }
 
+[targets.guardian.jobs.live-quarantine-preview]
+runner = "command"
+command = ["python3", "tools/live_quarantine_gate.py", "--preflight"]
+inputs = ["tools/live_quarantine_gate.py"]
+metadata = { device_required = true, root_required = true, read_only = true, scope = "eu.hxreborn.remembermysort" }
+
+[targets.guardian.jobs.live-quarantine-apply]
+runner = "command"
+command = ["python3", "tools/live_quarantine_gate.py", "--apply"]
+inputs = ["tools/live_quarantine_gate.py"]
+metadata = { device_required = true, root_required = true, read_only = false, live_vector_mutation = true, authorized_target = "eu.hxreborn.remembermysort", never_use_in_ci = true }
+
+[targets.guardian.jobs.early-boot-model]
+runner = "command"
+command = ["python3", "tools/early_boot_transaction_lab.py"]
+inputs = ["tools/early_boot_transaction_lab.py", "tests/test_early_boot_transaction_lab.py"]
+outputs = ["dist/early-boot-prototype-lab.json"]
+metadata = { read_only = true, isolated = true, device_qualified = false, production_restore_modified = false }
+
+[targets.guardian.jobs.early-boot-inventory]
+runner = "command"
+command = ["python3", "tools/early_boot_preflight.py"]
+inputs = ["tools/early_boot_preflight.py"]
+metadata = { device_required = true, root_required = true, read_only = true, device_restoration_qualified = false }
+
 [targets.guardian.jobs.device-diagnostics]
 runner = "command"
 command = ["sh", "tools/device_check.sh"]
@@ -158,6 +203,7 @@ test = [
   { id = "contract", ref = "job:contract-tests", depends_on = ["preflight"] },
   { id = "ui", ref = "job:webui-tests", depends_on = ["preflight"] },
   { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
+  { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
 ]
 build = [
   { id = "preflight", ref = "job:source-check", depends_on = [] },
@@ -170,7 +216,8 @@ check = [
   { id = "contract", ref = "job:contract-tests", depends_on = ["preflight"] },
   { id = "ui", ref = "job:webui-tests", depends_on = ["preflight"] },
   { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
-  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity"] },
+  { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
+  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model"] },
   { id = "package", ref = "job:package", depends_on = ["qualification"] },
   { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
 ]
@@ -180,12 +227,17 @@ install = [
   { id = "contract", ref = "job:contract-tests", depends_on = ["preflight"] },
   { id = "ui", ref = "job:webui-tests", depends_on = ["preflight"] },
   { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
-  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity"] },
+  { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
+  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model"] },
   { id = "package", ref = "job:package", depends_on = ["qualification"] },
   { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
   { id = "install", ref = "job:flash-ksu", depends_on = ["verify"] },
 ]
 device-check = [{ id = "device", ref = "job:device-diagnostics", depends_on = [] }]
+live-quarantine-preview = [{ id = "preflight", ref = "job:live-quarantine-preview", depends_on = [] }]
+live-quarantine-gate = [{ id = "roundtrip", ref = "job:live-quarantine-apply", depends_on = [] }]
+early-boot-preflight = [{ id = "inventory", ref = "job:early-boot-inventory", depends_on = [] }]
+early-boot-lab = [{ id = "wal-model", ref = "job:early-boot-model", depends_on = [] }]
 
 # First-class named test catalog (also selectable with canonical `devtool test`).
 [[test]]
@@ -214,4 +266,11 @@ id = "guardian-webui"
 name = "KernelSU WebUI full-output and scope regression"
 runner = "command"
 command = ["node", "tests/test_webui.js"]
+timeout_seconds = 120
+
+[[test]]
+id = "guardian-early-boot-wal"
+name = "Isolated SQLite WAL transaction and reboot-interruption simulator"
+runner = "command"
+command = ["python3", "tools/early_boot_transaction_lab.py"]
 timeout_seconds = 120

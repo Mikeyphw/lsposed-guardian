@@ -52,3 +52,49 @@ Ubuntu GitHub Actions runs pure host tests and creates artifacts. No root, Andro
 | Automatic quarantine / recovery | DISABLED |
 
 Devtool integration findings are tracked cumulatively in [DEVTOOL_INTEGRATION_IMPROVEMENTS.md](DEVTOOL_INTEGRATION_IMPROVEMENTS.md); forward open upstream issues to the canonical Devtool improvement ledger when that checkout is available.
+
+## Real-device gates (explicit, never part of `check` / CI / install)
+
+The first authorized real target is `eu.hxreborn.remembermysort` ONLY. The
+live gate compares all module rows (UID and enabled status) before, during,
+and after, and uses Guardian's journaled quarantine/rollback. It stores receipts
+in `~/.local/state/lsposed-guardian/real-gates/` and copies complete stdout and
+stderr to the Termux clipboard. No app is restarted and no hardware reboot is
+initiated; this qualifies **Vector/Guardian state transitions**, not active hook
+unloading from already-running Android processes.
+
+```sh
+cd ~/Code/lsposed-guardian
+./devtoolw live-quarantine-preview
+GUARDIAN_GATE_TARGET=eu.hxreborn.remembermysort ./devtoolw live-quarantine-gate
+```
+
+The live gate refuses if any quarantine is pending or the current baseline
+isn't enabled for that target. If a transaction is uncertain, it attempts only
+journal-backed Guardian reconciliation and rollback, never blind Vector toggles.
+A blocked rollback must be manually investigated; the full evidence is retained.
+A verified round-trip still does not qualify automatic quarantine decisions.
+
+For the second gate, only readiness can be collected from a daily-use device:
+
+```sh
+./devtoolw early-boot-preflight
+```
+
+**Genuine early-boot database restoration** must take place on a disposable
+Android device or safely recoverable test environment with matching Vector
+version, validated backup, independently available rescue route, WAL-aware
+snapshot/restore ordering, filesystem owner/mode/SELinux context checks,
+power-cut/interrupted-restore rehearsal, and at least one known-corrupt
+snapshot refusal followed by a successful boot and SQLite integrity check.
+A read-only preflight does **not** supply any of that proof. Never set
+`RECOVERY_DEVICE_QUALIFIED=1` or `AUTO_RECOVERY=1` just from these receipts.
+
+
+### Root-only module visibility in Termux
+
+The live gate intentionally probes the installed Guardian CLI **through `su -c`**, not `Path.exists()` from the Termux UID. `/data/adb/modules` may be inaccessible to unprivileged processes. A failed root CLI probe blocks all live changes and records its diagnostic. The root-probe repair changes only repository-side qualification tooling; it does not reinstall or change the Android module.
+
+## Genuine early-boot qualification workbench (device gate still open)
+
+`./devtoolw early-boot-lab` exercises a **host-only, fault-injected candidate protocol** with actual SQLite WAL and nine checkpoints. It is part of Devtool's host check/install DAG and mirrored in GitHub CI; it does NOT call the real `post-fs-data.sh`, modify Vector, or grant `RECOVERY_DEVICE_QUALIFIED=1`. Read the strict requirements at [`EARLY_BOOT_REAL_DEVICE_GATE.md`](EARLY_BOOT_REAL_DEVICE_GATE.md). A working early-boot restoration **must** be proven on a disposable device with independent rescue before any production implementation is enabled.

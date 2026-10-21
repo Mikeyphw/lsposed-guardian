@@ -142,3 +142,14 @@ Deferred to independent device qualification: true early-boot recovery including
 Note: `RECOVERY_DEVICE_QUALIFIED=1` configured in certain host fixtures is solely for
 negative-test coverage. It is NOT evidence of a qualified physical device. The
 `qualification` command reports this as `CONFIG_FLAG_SET_NOT_DEVICE_PROOF`.
+
+### Real-device qualification campaign (after v0.9 host acceptance)
+
+- [ ] Live Guardian/Vector quarantine+rollback for `eu.hxreborn.remembermysort` on the owner's device; requires explicit authorized invocation, exact before/during/after inventory and no pending journals.
+- [ ] Fresh independent confirmation after test that target is enabled and other seven enabled modules remain unaffected.
+- [ ] Disposable Android early-boot offline database restore under genuine boot timing and SELinux/WAL conditions; daily-driver preflight alone does not close this gate.
+- [ ] Fault-inject interrupted early-boot restore and verify deterministic recovery / rescue; no promotion to automatic recovery without this evidence.
+
+### GATE-2: real offline restoration — current state (2026-10-21)
+
+**OPEN / NOT_VERIFIED.** Android fingerprint, SELinux, root context and real nonempty WAL/SHM sidecars have been recorded via Devtool. The pre-existing `offline_restore` is not safe to qualify yet: sidecars are deleted before DB swap. New `early-boot-lab` models nine checkpointed WAL-family transactions, but is intentionally not called by `post-fs-data.sh`. See `docs/EARLY_BOOT_REAL_DEVICE_GATE.md` for actual disposable-device acceptance obligations. Keep `RECOVERY_DEVICE_QUALIFIED=0` and automatic recovery OFF; live module quarantine/rollback was separately demonstrated PASS for `eu.hxreborn.remembermysort`.

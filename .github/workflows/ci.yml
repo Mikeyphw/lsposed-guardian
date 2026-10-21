@@ -29,6 +29,8 @@ jobs:
         run: node tests/test_webui.js
       - name: Full fake-Vector safety regression
         run: python3 tools/run_host_tests.py --workers 2 --timeout 180
+      - name: Isolated SQLite WAL recovery model
+        run: python3 tools/early_boot_transaction_lab.py
       - name: Validate complete host-test evidence (Devtool DAG parity)
         run: python3 tools/qualify_host.py
       - name: Deterministic package
