@@ -41,3 +41,12 @@ Finding: `early-boot-preflight` ran only after Android startup and cannot establ
 - **Affected:** Guardian's opt-in boot-probe test fixture and source-overlay acceptance; not the real `post-fs-data` ordering. **Do not weaken `bp_status()` acceptance checks.**
 - **Fix:** Give the fixture a writable temporary `GUARDIAN_LOCK_DIR`, assert the expected stable receipt is actually written and the lock cleaned up, and add a negative fixture for an impossible lock path. Confirm test success running as an unprivileged user and as root.
 - **Status:** Host regression PASS; Termux device regression PENDING. No installed module or Vector files affected by failed original overlay.
+
+
+## GUARD-DT-009 — Slow hermetic Python CLI fixture startup (2026-10-22)
+
+- **Evidence:** The original 69-test fake-Vector host evidence records 1,457.77 seconds of summed test duration at two workers; a representative test took 20.23 seconds on this host. The 15-invocation sqlite3 Python startup benchmark was 11.21 seconds with site initialization versus 0.26 seconds with `-S`.
+- **Root cause:** Every isolated per-test Python process and its numerous fake-Vector/SQLite Python subprocesses initialized all site packages even though they only need Python's standard library.
+- **Remediation:** Dynamically generate mock CLI shebangs using the current interpreter plus `-S`; execute each test in its own fresh `python -S -m unittest ...` child process. Preserve all 69 tests, per-test timeouts, temporary Vector fixtures, stdout/stderr, source hash inventory and exact-name PASS gate. Keep original two-worker limit to avoid CPU contention on Termux.
+- **Validation:** 69/69 tests PASS in 13.67 seconds with the same two workers on this host; the earlier evidence is from a different environment and is **not** a controlled before/after on the user's Termux device. Native Devtool `check` timing pending.
+- **Suggested Devtool enhancement:** Report per-node critical path and startup overhead separately and surface performance bottleneck recommendations. Status: Guardian-side fix tested; Devtool ergonomics improvement open.

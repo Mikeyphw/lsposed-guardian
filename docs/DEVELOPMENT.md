@@ -103,3 +103,10 @@ The live gate intentionally probes the installed Guardian CLI **through `su -c`*
 ## Boot-order qualification on the owner's phone (source gate)
 `./devtoolw boot-order-stage` is a **separate**, opt-in job creating only a next-hardware-boot marker. `./devtoolw boot-order-status` reads the root-only receipt after reboot. The installed runtime must be updated through the ordinary validated `./devtoolw install` before staging. The hook saves boot-complete flag, Vector daemon PID, SELinux mode and sidecar presence in `/data/adb/lsposed-guardian/boot-probe/early.txt`, before automatic restoration logic. Once healthy, service.sh saves `stable.txt`. The status PASS verifies only observed ordering and Vector response; does not prove race-free exclusive DB ownership or restoration.
 A green boot-order receipt never automatically authorizes writes, restores, qualification or `AUTO_RECOVERY=1`.
+
+
+## v0.9.2 candidate: faster full test suite and opt-in copy-only boot trial
+
+`./devtoolw check` still runs all 69 case-isolated fake-Vector tests, preserves individual timeout and evidence validation, and now also requires copy-only boot-trial fixture tests. Fake Python CLI helpers and per-test subprocesses use `-S` to avoid unnecessary site initialization. Host 69/69 passed in 13.67 seconds; Termux benchmark remains pending.
+
+Real boot-trial commands (`stage`, `status`, `cancel`) are explicit, isolated Devtool workflows, not part of ordinary `check` or CI; v0.9.2 boot hook is no-op unless the user stages a one-shot copy-only next-boot rehearsal. Vector's live DB remains untouched.

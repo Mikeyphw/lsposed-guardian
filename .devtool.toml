@@ -65,6 +65,21 @@ description = "Inspect recorded post-fs-data ordering and Vector health receipts
 workflow = "boot-order-status"
 target = "guardian"
 
+[wrapper.commands.boot-trial-stage]
+description = "Explicitly stage a next-reboot COPY-ONLY Vector DB/WAL rehearsal; no live DB replacement"
+workflow = "boot-trial-stage"
+target = "guardian"
+
+[wrapper.commands.boot-trial-status]
+description = "Inspect real boot copy-only trial and stable Vector receipt"
+workflow = "boot-trial-status"
+target = "guardian"
+
+[wrapper.commands.boot-trial-cancel]
+description = "Cancel a staged (not in-progress) copy-only boot trial"
+workflow = "boot-trial-cancel"
+target = "guardian"
+
 [wrapper.commands.early-boot-lab]
 description = "Hermetic SQLite WAL transaction and restart-interruption simulation; no live restore"
 workflow = "early-boot-lab"
@@ -192,6 +207,27 @@ runner = "command"
 command = ["sh", "tools/boot_probe_gate.sh", "status"]
 metadata = { root_required = true, read_only = true, never_use_in_ci = true }
 
+[targets.guardian.jobs.boot-trial-stage]
+runner = "command"
+command = ["sh", "tools/boot_trial_gate.sh", "stage"]
+metadata = { root_required = true, explicit_opt_in = true, real_boot = true, copy_only = true, never_use_in_ci = true }
+
+[targets.guardian.jobs.boot-trial-status]
+runner = "command"
+command = ["sh", "tools/boot_trial_gate.sh", "status"]
+metadata = { root_required = true, read_only = true, never_use_in_ci = true }
+
+[targets.guardian.jobs.boot-trial-cancel]
+runner = "command"
+command = ["sh", "tools/boot_trial_gate.sh", "cancel"]
+metadata = { root_required = true, explicit_opt_in = true, never_use_in_ci = true }
+
+[targets.guardian.jobs.boot-trial-tests]
+runner = "command"
+command = ["python3", "-S", "-m", "unittest", "discover", "-s", "tests", "-p", "test_boot_trial.py", "-q"]
+inputs = ["lib/boot-trial.sh", "tests/test_boot_trial.py", "post-fs-data.sh", "service.sh"]
+metadata = { read_only = true, isolated = true, device_qualified = false }
+
 [targets.guardian.jobs.early-boot-model]
 runner = "command"
 command = ["python3", "tools/early_boot_transaction_lab.py"]
@@ -224,6 +260,7 @@ test = [
   { id = "ui", ref = "job:webui-tests", depends_on = ["preflight"] },
   { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
   { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
+  { id = "boot-trial-tests", ref = "job:boot-trial-tests", depends_on = ["preflight"] },
 ]
 build = [
   { id = "preflight", ref = "job:source-check", depends_on = [] },
@@ -237,7 +274,8 @@ check = [
   { id = "ui", ref = "job:webui-tests", depends_on = ["preflight"] },
   { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
   { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
-  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model"] },
+  { id = "boot-trial-tests", ref = "job:boot-trial-tests", depends_on = ["preflight"] },
+  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model", "boot-trial-tests"] },
   { id = "package", ref = "job:package", depends_on = ["qualification"] },
   { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
 ]
@@ -248,7 +286,8 @@ install = [
   { id = "ui", ref = "job:webui-tests", depends_on = ["preflight"] },
   { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
   { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
-  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model"] },
+  { id = "boot-trial-tests", ref = "job:boot-trial-tests", depends_on = ["preflight"] },
+  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model", "boot-trial-tests"] },
   { id = "package", ref = "job:package", depends_on = ["qualification"] },
   { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
   { id = "install", ref = "job:flash-ksu", depends_on = ["verify"] },
@@ -260,6 +299,9 @@ early-boot-preflight = [{ id = "inventory", ref = "job:early-boot-inventory", de
 early-boot-lab = [{ id = "wal-model", ref = "job:early-boot-model", depends_on = [] }]
 boot-order-stage = [{ id = "stage", ref = "job:boot-order-stage", depends_on = [] }]
 boot-order-status = [{ id = "status", ref = "job:boot-order-status", depends_on = [] }]
+boot-trial-stage = [{ id = "stage", ref = "job:boot-trial-stage", depends_on = [] }]
+boot-trial-status = [{ id = "status", ref = "job:boot-trial-status", depends_on = [] }]
+boot-trial-cancel = [{ id = "cancel", ref = "job:boot-trial-cancel", depends_on = [] }]
 
 # First-class named test catalog (also selectable with canonical `devtool test`).
 [[test]]
@@ -296,3 +338,10 @@ name = "Isolated SQLite WAL transaction and reboot-interruption simulator"
 runner = "command"
 command = ["python3", "tools/early_boot_transaction_lab.py"]
 timeout_seconds = 120
+
+[[test]]
+id = "guardian-boot-trial"
+name = "Hermetic real-boot copy-only WAL rehearsal fixture"
+runner = "command"
+command = ["python3", "-S", "-m", "unittest", "discover", "-s", "tests", "-p", "test_boot_trial.py", "-q"]
+timeout_seconds = 180

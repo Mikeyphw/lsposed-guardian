@@ -14,7 +14,7 @@ INSTALL = [
  'module.prop','config.defaults','customize.sh','action.sh','guardian.sh',
  'post-fs-data.sh','service.sh','crash-monitor.sh','history-monitor.sh','selftest.sh','uninstall.sh',
  'lib/common.sh','lib/crash.sh','lib/history.sh','lib/quarantine.sh',
- 'lib/recovery-lab.sh','lib/quarantine-lab.sh','lib/qualification.sh','lib/policy.sh','lib/boot-probe.sh',
+ 'lib/recovery-lab.sh','lib/quarantine-lab.sh','lib/qualification.sh','lib/policy.sh','lib/boot-probe.sh','lib/boot-trial.sh',
  'webroot/index.html','webroot/main.css','webroot/main.js','README.md','docs/ROADMAP.md',
 ]
 EXECUTABLE={'customize.sh','action.sh','guardian.sh','post-fs-data.sh','service.sh',

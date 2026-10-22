@@ -8,6 +8,7 @@ MODDIR="${0%/*}"
 . "$MODDIR/lib/quarantine-lab.sh" || exit 1
 . "$MODDIR/lib/qualification.sh" || exit 1
 . "$MODDIR/lib/boot-probe.sh" || exit 1
+. "$MODDIR/lib/boot-trial.sh" || exit 1
 . "$MODDIR/lib/policy.sh" || exit 1
 init_state || { echo 'Cannot initialize Guardian state (root required)' >&2; exit 1; }
 load_config
@@ -47,6 +48,9 @@ Usage: guardian.sh COMMAND [ARGS]
   quarantine-ledger Show sanitized manual toggle ledger (read-only)
   boot-probe-stage --apply  Record read-only early boot probe on next hardware boot
   boot-probe-status         Inspect post-fs-data and subsequent Vector health evidence
+  boot-trial-stage --apply  Stage one-shot real-boot COPY-ONLY WAL rehearsal
+  boot-trial-status         Inspect copied DB/WAL rehearsal and post-boot Vector health
+  boot-trial-cancel         Cancel a not-yet-started copy-only trial
   quarantine PKG    Preview single-module quarantine
   quarantine PKG --apply  Disable one Vector module and save rollback evidence
   rollback PKG --apply    Re-enable only a Guardian-quarantined module
@@ -255,6 +259,15 @@ case "${1:-help}" in
   boot-probe-status)
     [ -z "${2:-}" ] || { echo "No arguments expected" >&2; exit 2; }
     bp_status ;;
+  boot-trial-stage)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || { echo "Requires boot-trial-stage --apply" >&2; exit 2; }
+    bt_stage ;;
+  boot-trial-status)
+    [ -z "${2:-}" ] || { echo "No arguments expected" >&2; exit 2; }
+    bt_status ;;
+  boot-trial-cancel)
+    [ -z "${2:-}" ] || { echo "No arguments expected" >&2; exit 2; }
+    bt_cancel ;;
   quarantine-status) q_status ;;
   quarantine-ledger)
     if [ -s "$STATE_DIR/quarantine/events.tsv" ]; then

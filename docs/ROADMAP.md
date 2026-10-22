@@ -163,3 +163,13 @@ negative-test coverage. It is NOT evidence of a qualified physical device. The
 - [ ] Implement and validate production WAL-aware rollback code under an explicit one-time offline transaction; no automatic restore on daily phone.
 - [ ] Fault-inject real Android interruption during early-boot restore and validate custom recovery rescue from independent backup. Record SELinux context, daemon ordering, module scope persistence and device health.
 - [ ] Only after accepted evidence revisit `RECOVERY_DEVICE_QUALIFIED`; do not enable automatic quarantine/recovery by proxy.
+
+
+## v0.9.2 — copy-only real boot rehearsal + test-speed optimization
+
+- [x] v0.9.1 boot-order probe PASSED on real Rosemary: early observed before vectord PID, later Vector healthy (not proof of exclusive access).
+- [x] Real RememberMySort Vector quarantine/rollback passed with identical 20-module inventory and 2 ledger entries.
+- [x] Add opt-in copy-only WAL rehearsal in real post-fs-data environment with nine hermetic safety checks, no live DB replacement (real hardware run pending).
+- [x] Optimize mock Python startup without dropping, caching or combining isolated GuardianTests cases; host suite 69/69 in 13.67 sec.
+- [ ] Real hardware copy-only rehearsal + healthy-boot receipt.
+- [ ] Genuine offline full-family restoration, SELinux/startup exclusivity and injected interruption test; unqualified until then.

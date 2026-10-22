@@ -60,3 +60,13 @@ After installing the validated Guardian v0.9.1 module through Devtool (KernelSU 
 `boot-order-status` reports an `EARLY_CANDIDATE` when the actual KernelSU `post-fs-data` hook saw `sys.boot_completed=0` and `pidof vectord` was empty. It also requires a matching healthy service-phase receipt where Vector responded. The marker is one-shot; no daemon is killed, no live SQLite files are read or modified beyond file-existence metadata, and no restore is queued. `PASS_GUARDIAN_BOOT_ORDER_OBSERVED` is not exclusive DB ownership proof, nor an authorization to turn on recovery.
 
 Missing/late Vector ordering, missing receipts, mismatching kernel boot IDs or failed Vector post-boot response remain pending/negative evidence. Next step is a fail-closed staged restore with independent rescue and explicit user authorization, not a reboot loop or automatic recovery.
+
+
+## Phase 2: copy-only post-fs-data WAL rehearsal (v0.9.2 candidate)
+
+- Live RememberMySort quarantine/rollback PASSED with all 20 Vector inventory entries identical before/after, 2 ledger entries, no pending transactions.
+- KernelSU boot-order probe PASSED on boot `cfbcbd25-4bbd-4327-890e-c387a82dd19f`: observed early, `vectord_pid=none`, later Vector responding. This does not prove exclusive DB access.
+- v0.9.2 includes opt-in `./devtoolw boot-trial-stage`, `./devtoolw boot-trial-status` and `./devtoolw boot-trial-cancel`. Staging requires an **exact-current-boot** successful boot-order receipt, a verified independent rescue backup and integrity-verified observed snapshot.
+- After installing v0.9.2, repeat `boot-order-stage`, reboot and verify `boot-order-status` before staging the copy-only trial. Reboot again only after explicit staging. Normal `check`, CI and install **never stage the trial**.
+- The one-time hook writes only to an isolated hidden directory under `/data/adb/lspd/config/`, retiring *copies* of WAL, SHM, journal and staging a *copy* of observed DB. It verifies live file fingerprints unchanged and Vector responds after healthy boot. Original DB and sidecars are never intentionally replaced.
+- Passing this test is not genuine early-boot restore qualification, nor is it proof of full-family exclusive ownership. Automatic restoration and device qualification remain disabled.

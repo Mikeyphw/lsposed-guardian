@@ -1,6 +1,6 @@
 id=lsposed_guardian
 name=LSPosed Guardian
-version=0.9.1
-versionCode=901
+version=0.9.2
+versionCode=902
 author=Community prototype
-description=Guardian observe-only, read-only opt-in boot-order probe and isolated recovery labs.
+description=Guardian observe-only, copy-only real boot WAL rehearsal, gated recovery labs.

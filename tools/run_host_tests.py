@@ -25,7 +25,7 @@ source_inventory_before=inventory()
 def run_one(name):
     started=time.monotonic()
     try:
-        p=subprocess.run([sys.executable,'-m','unittest',f'test_guardian.GuardianTests.{name}','-q'],cwd=root/'tests',capture_output=True,text=True,timeout=args.timeout)
+        p=subprocess.run([sys.executable,'-S','-m','unittest',f'test_guardian.GuardianTests.{name}','-q'],cwd=root/'tests',capture_output=True,text=True,timeout=args.timeout)
         ok=p.returncode==0
         return {'name':name,'status':'PASS' if ok else 'FAIL','elapsed_seconds':round(time.monotonic()-started,2),'details':'' if ok else (p.stdout+p.stderr)[-1800:]}
     except subprocess.TimeoutExpired:

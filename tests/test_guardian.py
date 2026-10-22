@@ -5,6 +5,7 @@ import pathlib
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -27,8 +28,7 @@ class GuardianTests(unittest.TestCase):
         self.fakebin.mkdir()
         # Host-only shim; production uses an installed sqlite3 CLI when available.
         sqlite_cli=self.fakebin/'sqlite3'
-        sqlite_cli.write_text("""#!/usr/bin/env python3
-import sqlite3,sys
+        sqlite_cli.write_text(f"#!{sys.executable} -S\n" + """import sqlite3,sys
 args=sys.argv[1:]
 if args[0]=='-readonly':args=args[1:]
 con=sqlite3.connect(f'file:{args[0]}?mode=ro',uri=True)
@@ -39,8 +39,7 @@ finally: con.close()
 """)
         sqlite_cli.chmod(0o755)
         self.vector = self.fakebin / "vectorcli"
-        self.vector.write_text('''#!/usr/bin/env python3
-import json, os, sqlite3, sys
+        self.vector.write_text(f"#!{sys.executable} -S\n" + '''import json, os, sqlite3, sys
 args=sys.argv[1:]
 if args[0]=='--json': args=args[1:]
 modules_path=os.environ['FAKE_MODULES_FILE']
