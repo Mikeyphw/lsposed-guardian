@@ -29,3 +29,15 @@ This is an append-only, evidence-oriented list of Devtool enhancements identifie
 - **Impact:** power interruption, startup race or denied rename could lose committed WAL data or leave a mismatched database family. Prior isolated `recovery-lab` is insufficient for this device claim.
 - **Change:** add an explicit `early-boot-lab` Devtool workflow, nine WAL/interruption simulator checkpoints with disposable SQLite WAL fixtures; mirror the host-only job in CI and test contracts. New `docs/EARLY_BOOT_REAL_DEVICE_GATE.md` records safety dependencies.
 - **Status:** `MODEL_PASS / LIVE_RESTORE_NOT_VERIFIED`. Production post-fs-data not changed. Pending real power-loss/startup-order/SELinux testing on disposable Android and independent rescue proof.
+
+
+## BOOT-PROBE-01 — device boot ordering evidence and opt-in workflow (2026-10-22)
+Finding: `early-boot-preflight` ran only after Android startup and cannot establish when KernelSU's `post-fs-data` occurs relative to Vector. Recommendation implemented: next-hardware-boot, read-only before-daemon probe with durable observed/stable receipts, plus separate opt-in Devtool jobs omitted from check/install/CI. A daemon PID or completed boot at hook time is a fail-closed `TOO_LATE` observation. No Vector DB modification, automatic recovery or device qualification implied. Status: IMPLEMENTED; real-hardware reboot observation PENDING.
+
+## BOOT-PROBE-02 — Unprivileged fixture falsely fails stable receipt (fixed in replacement overlay)
+
+- **Evidence:** 2026-10-22 Termux source-overlay validation had 1/6 failure: early receipt `assessment=EARLY_CANDIDATE` existed but `service.sh` never wrote the stable receipt, producing `BOOT_ORDER_NOT_YET_ACCEPTED`. The updater properly rolled back. Reproduced in Linux as the unprivileged `nobody` user; the exact same test passes as root.
+- **Root cause:** The hermetic `tests/test_boot_probe.py` subprocess environment omitted `GUARDIAN_LOCK_DIR`; production `service.sh` defaults to `/dev/lsposed_guardian_service_lock`. An unprivileged user cannot create that global directory, so the service exits 0 before the stability-acceptance function executes.
+- **Affected:** Guardian's opt-in boot-probe test fixture and source-overlay acceptance; not the real `post-fs-data` ordering. **Do not weaken `bp_status()` acceptance checks.**
+- **Fix:** Give the fixture a writable temporary `GUARDIAN_LOCK_DIR`, assert the expected stable receipt is actually written and the lock cleaned up, and add a negative fixture for an impossible lock path. Confirm test success running as an unprivileged user and as root.
+- **Status:** Host regression PASS; Termux device regression PENDING. No installed module or Vector files affected by failed original overlay.

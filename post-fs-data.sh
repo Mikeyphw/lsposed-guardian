@@ -1,8 +1,10 @@
 #!/system/bin/sh
 MODDIR="${0%/*}"
 . "$MODDIR/lib/common.sh" || exit 0
+. "$MODDIR/lib/boot-probe.sh" || exit 0
 init_state || exit 0
 load_config
+bp_early || :
 ID="$(boot_id)"
 [ -n "$ID" ] || { log ERROR 'Boot ID missing, refusing recovery'; exit 0; }
 CURRENT="$(read_first "$BOOT_DIR/current-id")"

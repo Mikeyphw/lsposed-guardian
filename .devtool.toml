@@ -55,6 +55,16 @@ description = "EXPLICIT LIVE MUTATION: journaled RememberMySort disable then rol
 workflow = "live-quarantine-gate"
 target = "guardian"
 
+[wrapper.commands.boot-order-stage]
+description = "Opt in to a read-only next-reboot KernelSU boot ordering probe; no Vector changes"
+workflow = "boot-order-stage"
+target = "guardian"
+
+[wrapper.commands.boot-order-status]
+description = "Inspect recorded post-fs-data ordering and Vector health receipts"
+workflow = "boot-order-status"
+target = "guardian"
+
 [wrapper.commands.early-boot-lab]
 description = "Hermetic SQLite WAL transaction and restart-interruption simulation; no live restore"
 workflow = "early-boot-lab"
@@ -172,6 +182,16 @@ command = ["python3", "tools/live_quarantine_gate.py", "--apply"]
 inputs = ["tools/live_quarantine_gate.py"]
 metadata = { device_required = true, root_required = true, read_only = false, live_vector_mutation = true, authorized_target = "eu.hxreborn.remembermysort", never_use_in_ci = true }
 
+[targets.guardian.jobs.boot-order-stage]
+runner = "command"
+command = ["sh", "tools/boot_probe_gate.sh", "stage"]
+metadata = { root_required = true, explicit_opt_in = true, vector_mutation = false, boot_probe_marker = true, never_use_in_ci = true }
+
+[targets.guardian.jobs.boot-order-status]
+runner = "command"
+command = ["sh", "tools/boot_probe_gate.sh", "status"]
+metadata = { root_required = true, read_only = true, never_use_in_ci = true }
+
 [targets.guardian.jobs.early-boot-model]
 runner = "command"
 command = ["python3", "tools/early_boot_transaction_lab.py"]
@@ -238,6 +258,8 @@ live-quarantine-preview = [{ id = "preflight", ref = "job:live-quarantine-previe
 live-quarantine-gate = [{ id = "roundtrip", ref = "job:live-quarantine-apply", depends_on = [] }]
 early-boot-preflight = [{ id = "inventory", ref = "job:early-boot-inventory", depends_on = [] }]
 early-boot-lab = [{ id = "wal-model", ref = "job:early-boot-model", depends_on = [] }]
+boot-order-stage = [{ id = "stage", ref = "job:boot-order-stage", depends_on = [] }]
+boot-order-status = [{ id = "status", ref = "job:boot-order-status", depends_on = [] }]
 
 # First-class named test catalog (also selectable with canonical `devtool test`).
 [[test]]

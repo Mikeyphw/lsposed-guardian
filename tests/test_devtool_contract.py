@@ -289,6 +289,23 @@ class DevtoolContractTests(unittest.TestCase):
   self.assertNotIn('job:early-boot-model',[x['ref'] for x in TARGET['workflows']['build']])
   self.assertNotIn('early_boot_transaction_lab', (ROOT/'post-fs-data.sh').read_text())
 
+ def test_one_shot_real_boot_probe_is_opt_in_and_non_destructive(self):
+  cfg=CONF['targets']['guardian']
+  self.assertEqual(WRAP['boot-order-stage']['workflow'],'boot-order-stage')
+  self.assertEqual(WRAP['boot-order-status']['workflow'],'boot-order-status')
+  self.assertTrue(cfg['jobs']['boot-order-stage']['metadata']['never_use_in_ci'])
+  self.assertTrue(cfg['jobs']['boot-order-status']['metadata']['read_only'])
+  for workflow in ('check','test','install','build'):
+   refs={step['ref'] for step in cfg['workflows'][workflow]}
+   self.assertNotIn('job:boot-order-stage',refs)
+   self.assertNotIn('job:boot-order-status',refs)
+  boot=(ROOT/'post-fs-data.sh').read_text()
+  self.assertIn('bp_early || :',boot)
+  self.assertNotIn('boot-probe-stage --apply',boot)
+  self.assertNotIn('rm -f "$DB-wal"', (ROOT/'lib/boot-probe.sh').read_text())
+  p=subprocess.run(['python3','-m','unittest','discover','-s','tests','-p','test_boot_probe.py','-q'],cwd=ROOT,text=True,capture_output=True,timeout=60)
+  self.assertEqual(p.returncode,0,p.stdout+p.stderr)
+
  def test_app_package_is_android_installable_root_module(self):
   prop=(ROOT/'module.prop').read_text()
   self.assertIn('id=lsposed_guardian\n',prop)

@@ -43,3 +43,20 @@ Required machine receipt fields: source commit, build hashes, installed module h
 ## Devtool workflows
 
 `./devtoolw early-boot-preflight` is read-only and must continue to report `NOT_VERIFIED` on a primary device. `./devtoolw early-boot-lab` is host-only and only writes under disposable temporary directories and `dist/`; the test is part of `./devtoolw check`, `install` host qualification and GitHub CI, but **does not** count as a device restore.
+
+
+## Phase 1: hardware ordering probe (Guardian v0.9.1)
+
+The verified manual rescue script v4 at `/data/local/tmp/guardian-recover.sh` was confirmed by the device owner to read `backup_integrity=PASS` in custom recovery. This is **rescue readiness**, not live early-boot restore qualification.
+
+After installing the validated Guardian v0.9.1 module through Devtool (KernelSU install, reboot as requested), wait for stability, then opt in to a **separate** read-only reboot probe:
+
+```
+./devtoolw boot-order-stage
+# Manually reboot the phone after staging, without additional device changes
+./devtoolw boot-order-status
+```
+
+`boot-order-status` reports an `EARLY_CANDIDATE` when the actual KernelSU `post-fs-data` hook saw `sys.boot_completed=0` and `pidof vectord` was empty. It also requires a matching healthy service-phase receipt where Vector responded. The marker is one-shot; no daemon is killed, no live SQLite files are read or modified beyond file-existence metadata, and no restore is queued. `PASS_GUARDIAN_BOOT_ORDER_OBSERVED` is not exclusive DB ownership proof, nor an authorization to turn on recovery.
+
+Missing/late Vector ordering, missing receipts, mismatching kernel boot IDs or failed Vector post-boot response remain pending/negative evidence. Next step is a fail-closed staged restore with independent rescue and explicit user authorization, not a reboot loop or automatic recovery.

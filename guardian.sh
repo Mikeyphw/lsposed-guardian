@@ -7,6 +7,7 @@ MODDIR="${0%/*}"
 . "$MODDIR/lib/recovery-lab.sh" || exit 1
 . "$MODDIR/lib/quarantine-lab.sh" || exit 1
 . "$MODDIR/lib/qualification.sh" || exit 1
+. "$MODDIR/lib/boot-probe.sh" || exit 1
 . "$MODDIR/lib/policy.sh" || exit 1
 init_state || { echo 'Cannot initialize Guardian state (root required)' >&2; exit 1; }
 load_config
@@ -44,6 +45,8 @@ Usage: guardian.sh COMMAND [ARGS]
   quarantine-status Show active or interrupted manual quarantines
   panel             Compact read-only management overview (Termux-friendly)
   quarantine-ledger Show sanitized manual toggle ledger (read-only)
+  boot-probe-stage --apply  Record read-only early boot probe on next hardware boot
+  boot-probe-status         Inspect post-fs-data and subsequent Vector health evidence
   quarantine PKG    Preview single-module quarantine
   quarantine PKG --apply  Disable one Vector module and save rollback evidence
   rollback PKG --apply    Re-enable only a Guardian-quarantined module
@@ -246,6 +249,12 @@ case "${1:-help}" in
     echo "sqlite_verifier=$({ sqlite_tool >/dev/null && echo available; } || echo unavailable)"
     echo "device_restore_qualified=$RECOVERY_DEVICE_QUALIFIED"
     ;;
+  boot-probe-stage)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || { echo "Requires boot-probe-stage --apply" >&2; exit 2; }
+    bp_stage ;;
+  boot-probe-status)
+    [ -z "${2:-}" ] || { echo "No arguments expected" >&2; exit 2; }
+    bp_status ;;
   quarantine-status) q_status ;;
   quarantine-ledger)
     if [ -s "$STATE_DIR/quarantine/events.tsv" ]; then

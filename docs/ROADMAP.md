@@ -153,3 +153,13 @@ negative-test coverage. It is NOT evidence of a qualified physical device. The
 ### GATE-2: real offline restoration — current state (2026-10-21)
 
 **OPEN / NOT_VERIFIED.** Android fingerprint, SELinux, root context and real nonempty WAL/SHM sidecars have been recorded via Devtool. The pre-existing `offline_restore` is not safe to qualify yet: sidecars are deleted before DB swap. New `early-boot-lab` models nine checkpointed WAL-family transactions, but is intentionally not called by `post-fs-data.sh`. See `docs/EARLY_BOOT_REAL_DEVICE_GATE.md` for actual disposable-device acceptance obligations. Keep `RECOVERY_DEVICE_QUALIFIED=0` and automatic recovery OFF; live module quarantine/rollback was separately demonstrated PASS for `eu.hxreborn.remembermysort`.
+
+## Current hardware boot-stage ordering verification (opt-in, device NOT qualified)
+- [x] Real Vector manual quarantine/rollback on `eu.hxreborn.remembermysort`: 20/20 before-and-after inventory identical; no pending transaction, two ledger records. 2026-10-21 device evidence.
+- [x] Recovery v4 manually staged and SHA-256 verified (`backup_integrity=PASS`) at `/data/local/tmp/guardian-rescue`, and user confirmed read-only access from custom recovery. Rescue path is independent from Guardian's old restore code.
+- [x] 9/9 isolated WAL prototype scenarios PASS on Termux. Still host filesystem simulation, not early-boot qualification.
+- [x] Add a one-shot, **read-only** `post-fs-data` ordering probe with next-boot receipt and post-stability Vector observation. New commands: `boot-probe-stage --apply`, `boot-probe-status`, Devtool `boot-order-stage` / `boot-order-status`. Does not alter the DB or authorize restore.
+- [ ] Observe actual KernelSU hook before Vector DB opens on this specific phone after upgrading installed Guardian and requesting the probe.
+- [ ] Implement and validate production WAL-aware rollback code under an explicit one-time offline transaction; no automatic restore on daily phone.
+- [ ] Fault-inject real Android interruption during early-boot restore and validate custom recovery rescue from independent backup. Record SELinux context, daemon ordering, module scope persistence and device health.
+- [ ] Only after accepted evidence revisit `RECOVERY_DEVICE_QUALIFIED`; do not enable automatic quarantine/recovery by proxy.

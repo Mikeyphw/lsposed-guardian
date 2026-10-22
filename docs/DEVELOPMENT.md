@@ -98,3 +98,8 @@ The live gate intentionally probes the installed Guardian CLI **through `su -c`*
 ## Genuine early-boot qualification workbench (device gate still open)
 
 `./devtoolw early-boot-lab` exercises a **host-only, fault-injected candidate protocol** with actual SQLite WAL and nine checkpoints. It is part of Devtool's host check/install DAG and mirrored in GitHub CI; it does NOT call the real `post-fs-data.sh`, modify Vector, or grant `RECOVERY_DEVICE_QUALIFIED=1`. Read the strict requirements at [`EARLY_BOOT_REAL_DEVICE_GATE.md`](EARLY_BOOT_REAL_DEVICE_GATE.md). A working early-boot restoration **must** be proven on a disposable device with independent rescue before any production implementation is enabled.
+
+
+## Boot-order qualification on the owner's phone (source gate)
+`./devtoolw boot-order-stage` is a **separate**, opt-in job creating only a next-hardware-boot marker. `./devtoolw boot-order-status` reads the root-only receipt after reboot. The installed runtime must be updated through the ordinary validated `./devtoolw install` before staging. The hook saves boot-complete flag, Vector daemon PID, SELinux mode and sidecar presence in `/data/adb/lsposed-guardian/boot-probe/early.txt`, before automatic restoration logic. Once healthy, service.sh saves `stable.txt`. The status PASS verifies only observed ordering and Vector response; does not prove race-free exclusive DB ownership or restoration.
+A green boot-order receipt never automatically authorizes writes, restores, qualification or `AUTO_RECOVERY=1`.
