@@ -18,7 +18,7 @@ class DevtoolContractTests(unittest.TestCase):
 
  def test_install_workflow_has_integrity_prerequisite(self):
   steps=TARGET['workflows']['install']
-  self.assertEqual([x['id'] for x in steps],['preflight','unit','contract','ui','ci-parity','wal-model','boot-trial-tests','qualification','package','verify','install'])
+  self.assertEqual([x['id'] for x in steps],['preflight','unit','contract','ui','ci-parity','wal-model','boot-trial-tests','one-shot-tests','qualification','package','verify','install'])
   self.assertEqual(steps[-1]['ref'],'job:flash-ksu')
   self.assertEqual(steps[-1]['depends_on'],['verify'])
   self.assertEqual(steps[-2]['ref'],'job:verify-package')
@@ -26,7 +26,7 @@ class DevtoolContractTests(unittest.TestCase):
  def test_install_requires_full_qualification_graph(self):
   steps=TARGET['workflows']['install']
   q=next(item for item in steps if item['id']=='qualification')
-  self.assertEqual(set(q['depends_on']),{'unit','contract','ui','ci-parity','wal-model','boot-trial-tests'})
+  self.assertEqual(set(q['depends_on']),{'unit','contract','ui','ci-parity','wal-model','boot-trial-tests','one-shot-tests'})
   p=next(item for item in steps if item['id']=='package')
   self.assertEqual(p['depends_on'],['qualification'])
   src=(ROOT/'tools/qualify_host.py').read_text()
@@ -125,7 +125,7 @@ class DevtoolContractTests(unittest.TestCase):
 
  def test_check_keeps_all_safety_jobs_and_copy_only_trial(self):
   jobs=TARGET['jobs']; workflows=TARGET['workflows']
-  must={'source-check','unit-tests','contract-tests','webui-tests','ci-parity','early-boot-model','boot-trial-tests','host-qualification','package','verify-package'}
+  must={'source-check','unit-tests','contract-tests','webui-tests','ci-parity','early-boot-model','boot-trial-tests','one-shot-tests','host-qualification','package','verify-package'}
   self.assertTrue(must.issubset(jobs),must-set(jobs))
   for name in ('check','install'):
    refs={n['ref'] for n in workflows[name]}
@@ -147,7 +147,7 @@ class DevtoolContractTests(unittest.TestCase):
 
  def test_typed_first_class_test_catalog(self):
   ids={x['id'] for x in CONF['test']}
-  self.assertEqual(ids,{'guardian-shell','guardian-python','guardian-webui','guardian-devtool-contract','guardian-early-boot-wal','guardian-boot-trial'})
+  self.assertEqual(ids,{'guardian-shell','guardian-python','guardian-webui','guardian-devtool-contract','guardian-early-boot-wal','guardian-boot-trial','guardian-one-shot'})
 
  def test_no_install_in_readonly_flows(self):
   for name in ('syntax','test','check','webui','device-check','preflight','doctor'):

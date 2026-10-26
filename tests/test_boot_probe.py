@@ -31,7 +31,13 @@ class BootProbeTests(unittest.TestCase):
         for item in self.fake.iterdir():item.chmod(0o755)
         self.env=dict(os.environ,PATH=f'{self.fake}:{os.environ["PATH"]}',GUARDIAN_STATE_DIR=str(self.state),GUARDIAN_LOCK_DIR=str(self.service_lock),GUARDIAN_BOOT_ID_PATH=str(self.boot),GUARDIAN_VECTOR_DB=str(self.db),GUARDIAN_VECTOR_CLI=str(self.fake/'vectorcli'),GUARDIAN_VECTOR_MODULE_PROP=str(t/'prop'))
         (t/'prop').write_text('id=zygisk_vector\nversionCode=3112\n')
-        self.state.joinpath('config.conf').write_text((ROOT/'config.defaults').read_text())
+        # Service boot-stability tests must not launch background monitors
+        # against a disposable directory that cleanup removes immediately.
+        # Production retains its existing collector defaults unchanged.
+        defaults=(ROOT/'config.defaults').read_text()
+        defaults=defaults.replace('PASSIVE_CRASH_MONITOR=1','PASSIVE_CRASH_MONITOR=0')
+        defaults=defaults.replace('HISTORY_MONITOR=1','HISTORY_MONITOR=0')
+        self.state.joinpath('config.conf').write_text(defaults)
         self.state.joinpath('boot').mkdir()
         self.state.joinpath('boot/last-success-id').write_text(self.boot.read_text())
     def call(self,path,*args,env=None,rc=0):

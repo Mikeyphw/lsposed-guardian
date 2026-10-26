@@ -3,6 +3,7 @@ MODDIR="${0%/*}"
 . "$MODDIR/lib/common.sh" || exit 0
 . "$MODDIR/lib/boot-probe.sh" || exit 0
 . "$MODDIR/lib/boot-trial.sh" || exit 0
+. "$MODDIR/lib/one-shot.sh" || exit 0
 init_state || exit 0
 load_config
 ID="$(boot_id)"
@@ -58,6 +59,7 @@ rm -f "$BOOT_DIR/pending-id" "$BOOT_DIR/recovery-performed"
 log HEALTH 'Boot stable, consecutive-failure counter cleared'
 bp_stable || :
 bt_stable || :
+os_stable || :
 # Start the read-only collector only after a healthy boot; never delay recovery for it.
 if [ "$PASSIVE_CRASH_MONITOR" = 1 ]; then
   sh "$MODDIR/crash-monitor.sh" </dev/null >/dev/null 2>&1 &

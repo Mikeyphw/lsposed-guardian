@@ -50,3 +50,23 @@ Finding: `early-boot-preflight` ran only after Android startup and cannot establ
 - **Remediation:** Dynamically generate mock CLI shebangs using the current interpreter plus `-S`; execute each test in its own fresh `python -S -m unittest ...` child process. Preserve all 69 tests, per-test timeouts, temporary Vector fixtures, stdout/stderr, source hash inventory and exact-name PASS gate. Keep original two-worker limit to avoid CPU contention on Termux.
 - **Validation:** 69/69 tests PASS in 13.67 seconds with the same two workers on this host; the earlier evidence is from a different environment and is **not** a controlled before/after on the user's Termux device. Native Devtool `check` timing pending.
 - **Suggested Devtool enhancement:** Report per-node critical path and startup overhead separately and surface performance bottleneck recommendations. Status: Guardian-side fix tested; Devtool ergonomics improvement open.
+
+## v0.9.3 one-shot real-restore preparation (2026-10-25)
+- **DELIVERED host-only:** explicit opt-in Devtool workflows for real boot restoration preflight, stage, status and cancel; none are called by `check`, `test`, `install` or GitHub Actions. The host fixture test is included in both full host qualification DAGs and CI mirror.
+- **DELIVERED source:** manual one-shot transaction copies and verifies original SQLite family before modification, retains a root-only journal and offline undo, rechecks daemon state immediately before swap, validates recorded device-specific SELinux context and owner/mode, verifies post-boot Vector and enabled manifest, consumes the request once, never arms automatic recovery.
+- **OPEN Android qualification:** actual source-bound installation, `one-shot-preflight` and device-specific SELinux/ownership compatibility; genuine live DB one-shot restore and crash/power-loss boundaries. No claim of safe exclusive access; `pidof` cannot eliminate all races.
+- **OPEN device recovery:** custom-recovery invocation of the new offline undo (the existing rescue v4 backup was verified separately).
+- **PERFORMANCE:** Guardian fake Vector regression remains 69 cases with `python3 -S` on hermetic mocks, no gate removal; new one-shot tests are isolated and fast.
+
+## GUARD-DT-010 — One-shot fixture accidentally depends on host root (2026-10-26)
+
+- **Evidence:** Termux `APPLY-TERMUX.py` v0.9.3 validation failed 4/15 `test_one_shot` cases after the Android user UID could not `chown 0:0` a disposable database and the fixture's `one-shot-offline-undo.sh` invoked real `id -u`. The source-bound updater automatically rolled the candidate back; installed v0.9.2 and live Vector were unchanged. Reproduced with exactly four failures when running the original suite as Linux `nobody`; running as root masked the problem.
+- **Cause:** Unit-test mocks supplied fake `ls -Z`, `stat`, `chcon` and SQLite/Vector but did not simulate `chown` or the privileged UID check. This was **not** evidence that the actual early-boot root context had failed; production restore still unverified.
+- **Remedy:** Fixture-private `id -u` and `chown` mocks provide root capability **only for isolated temporary paths**, while actual production `chown 0:0` and `id -u` guards remain intact. New negative tests assert the offline undo rejects non-root identity and a failed ownership operation refuses the swap without modifying the original DB family. Tests must pass both root and an unprivileged user.
+- **Status:** FIXED in v0.9.3 replacement candidate; device/source verification pending. Devtool improvement proposed: optional per-job `run_as=unprivileged` or a target execution-identity contract for host tests to expose implicit privilege assumptions before Termux installation.
+
+## GUARD-DT-011 — Boot-probe fixture cleanup races detached monitors (2026-10-26)
+
+- **Evidence:** Running v0.9.3 `test_devtool_contract.py` while testing the unprivileged fix intermittently failed its nested `test_boot_probe.py` suite with `OSError: Directory not empty` during temporary fixture cleanup. The mock `service.sh` successful-boot path launched production-default crash/history collectors in the background, racing cleanup of their disposable state directory.
+- **Remedy:** Set `PASSIVE_CRASH_MONITOR=0` and `HISTORY_MONITOR=0` in the **test fixture config only** (same isolation pattern already used by the one-shot tests). Preserve real `service.sh` monitor behavior. Run the nested tests repeatedly and with a non-root UID to catch regressions.
+- **Status:** Fixture fix included in replacement v0.9.3 overlay; on-device source verification pending. Consider Devtool diagnostics of leaked daemon children or background processes in hermetic jobs (not yet verified as a Devtool bug).

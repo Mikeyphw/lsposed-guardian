@@ -33,6 +33,8 @@ jobs:
         run: python3 tools/early_boot_transaction_lab.py
       - name: Boot trial copy-only fixture (no Android or live database)
         run: python3 -S -m unittest discover -s tests -p test_boot_trial.py -q
+      - name: One-shot live-file fixture (isolated, never edits Android)
+        run: python3 -S -m unittest discover -s tests -p test_one_shot.py -q
       - name: Validate complete host-test evidence (Devtool DAG parity)
         run: python3 tools/qualify_host.py
       - name: Deterministic package

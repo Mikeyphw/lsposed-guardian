@@ -173,3 +173,15 @@ negative-test coverage. It is NOT evidence of a qualified physical device. The
 - [x] Optimize mock Python startup without dropping, caching or combining isolated GuardianTests cases; host suite 69/69 in 13.67 sec.
 - [ ] Real hardware copy-only rehearsal + healthy-boot receipt.
 - [ ] Genuine offline full-family restoration, SELinux/startup exclusivity and injected interruption test; unqualified until then.
+
+## v0.9.3 real restore acceptance (2026-10-25)
+- [x] Real single-module reversible Vector quarantine; exact original inventory restored (device operator receipt)
+- [x] Real pre-daemon boot-order observation and post-boot Vector response (v0.9.2)
+- [x] Real `post-fs-data` copy-only WAL transaction rehearsal with unchanged live DB main-file SHA-256 (v0.9.2)
+- [x] SHA-256 verified custom-recovery rescue and refreshed 9-module candidate; previous verified backup archived
+- [x] Source implementation of manually staged and one-shot journaled live DB swap, offline undo script and isolated host fixtures (v0.9.3; **device acceptance pending**)
+- [ ] Run full native-Termux Devtool `check` and install v0.9.3; verify preflight on actual device
+- [ ] Perform user-approved one-shot **real Vector database** restoration during actual hardware boot with healthy Vector and unchanged expected module enablement afterward
+- [ ] Validate custom recovery offline undo of retained original family, SELinux labels and sidecars
+- [ ] Exclude races with early Vector DB access via stronger framework startup coordination, and establish power-interruption recovery evidence
+- [ ] Device automatic recovery qualification remains 0; automatic quarantine remains disabled

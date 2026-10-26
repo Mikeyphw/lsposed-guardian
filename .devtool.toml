@@ -80,6 +80,26 @@ description = "Cancel a staged (not in-progress) copy-only boot trial"
 workflow = "boot-trial-cancel"
 target = "guardian"
 
+[wrapper.commands.one-shot-preflight]
+description = "Read-only preflight for manually approved one-time live Vector restore"
+workflow = "one-shot-preflight"
+target = "guardian"
+
+[wrapper.commands.one-shot-stage]
+description = "EXPLICIT ROOT MUTATION: stage single next-hardware-boot real Vector DB restoration"
+workflow = "one-shot-stage"
+target = "guardian"
+
+[wrapper.commands.one-shot-status]
+description = "Read-only one-shot restore and stable Vector health evidence"
+workflow = "one-shot-status"
+target = "guardian"
+
+[wrapper.commands.one-shot-cancel]
+description = "Cancel not-yet-executed one-shot DB restore"
+workflow = "one-shot-cancel"
+target = "guardian"
+
 [wrapper.commands.early-boot-lab]
 description = "Hermetic SQLite WAL transaction and restart-interruption simulation; no live restore"
 workflow = "early-boot-lab"
@@ -228,6 +248,32 @@ command = ["python3", "-S", "-m", "unittest", "discover", "-s", "tests", "-p", "
 inputs = ["lib/boot-trial.sh", "tests/test_boot_trial.py", "post-fs-data.sh", "service.sh"]
 metadata = { read_only = true, isolated = true, device_qualified = false }
 
+[targets.guardian.jobs.one-shot-preflight]
+runner = "command"
+command = ["sh", "tools/one_shot_gate.sh", "preflight"]
+metadata = { root_required = true, read_only = true, device_qualified = false }
+
+[targets.guardian.jobs.one-shot-stage]
+runner = "command"
+command = ["sh", "tools/one_shot_gate.sh", "stage"]
+metadata = { root_required = true, explicit_opt_in = true, live_vector_db_mutation_on_next_boot = true, never_use_in_ci = true }
+
+[targets.guardian.jobs.one-shot-status]
+runner = "command"
+command = ["sh", "tools/one_shot_gate.sh", "status"]
+metadata = { root_required = true, read_only = true, never_use_in_ci = true }
+
+[targets.guardian.jobs.one-shot-cancel]
+runner = "command"
+command = ["sh", "tools/one_shot_gate.sh", "cancel"]
+metadata = { root_required = true, explicit_opt_in = true, never_use_in_ci = true }
+
+[targets.guardian.jobs.one-shot-tests]
+runner = "command"
+command = ["python3", "-S", "-m", "unittest", "discover", "-s", "tests", "-p", "test_one_shot.py", "-q"]
+inputs = ["lib/one-shot.sh", "tests/test_one_shot.py", "post-fs-data.sh", "service.sh", "one-shot-offline-undo.sh"]
+metadata = { read_only = true, isolated = true, device_qualified = false, live_vector_db_modified = false }
+
 [targets.guardian.jobs.early-boot-model]
 runner = "command"
 command = ["python3", "tools/early_boot_transaction_lab.py"]
@@ -261,6 +307,7 @@ test = [
   { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
   { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
   { id = "boot-trial-tests", ref = "job:boot-trial-tests", depends_on = ["preflight"] },
+  { id = "one-shot-tests", ref = "job:one-shot-tests", depends_on = ["preflight"] },
 ]
 build = [
   { id = "preflight", ref = "job:source-check", depends_on = [] },
@@ -275,7 +322,8 @@ check = [
   { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
   { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
   { id = "boot-trial-tests", ref = "job:boot-trial-tests", depends_on = ["preflight"] },
-  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model", "boot-trial-tests"] },
+  { id = "one-shot-tests", ref = "job:one-shot-tests", depends_on = ["preflight"] },
+  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model", "boot-trial-tests", "one-shot-tests"] },
   { id = "package", ref = "job:package", depends_on = ["qualification"] },
   { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
 ]
@@ -287,7 +335,8 @@ install = [
   { id = "ci-parity", ref = "job:ci-parity", depends_on = ["preflight"] },
   { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
   { id = "boot-trial-tests", ref = "job:boot-trial-tests", depends_on = ["preflight"] },
-  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model", "boot-trial-tests"] },
+  { id = "one-shot-tests", ref = "job:one-shot-tests", depends_on = ["preflight"] },
+  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model", "boot-trial-tests", "one-shot-tests"] },
   { id = "package", ref = "job:package", depends_on = ["qualification"] },
   { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
   { id = "install", ref = "job:flash-ksu", depends_on = ["verify"] },
@@ -302,6 +351,10 @@ boot-order-status = [{ id = "status", ref = "job:boot-order-status", depends_on 
 boot-trial-stage = [{ id = "stage", ref = "job:boot-trial-stage", depends_on = [] }]
 boot-trial-status = [{ id = "status", ref = "job:boot-trial-status", depends_on = [] }]
 boot-trial-cancel = [{ id = "cancel", ref = "job:boot-trial-cancel", depends_on = [] }]
+one-shot-preflight = [{ id = "preflight", ref = "job:one-shot-preflight", depends_on = [] }]
+one-shot-stage = [{ id = "stage", ref = "job:one-shot-stage", depends_on = [] }]
+one-shot-status = [{ id = "status", ref = "job:one-shot-status", depends_on = [] }]
+one-shot-cancel = [{ id = "cancel", ref = "job:one-shot-cancel", depends_on = [] }]
 
 # First-class named test catalog (also selectable with canonical `devtool test`).
 [[test]]
@@ -344,4 +397,11 @@ id = "guardian-boot-trial"
 name = "Hermetic real-boot copy-only WAL rehearsal fixture"
 runner = "command"
 command = ["python3", "-S", "-m", "unittest", "discover", "-s", "tests", "-p", "test_boot_trial.py", "-q"]
+timeout_seconds = 180
+
+[[test]]
+id = "guardian-one-shot"
+name = "Hermetic one-shot real-file restore and fail-closed fixture"
+runner = "command"
+command = ["python3", "-S", "-m", "unittest", "discover", "-s", "tests", "-p", "test_one_shot.py", "-q"]
 timeout_seconds = 180

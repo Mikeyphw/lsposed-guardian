@@ -12,12 +12,12 @@ OUT = ROOT / 'dist'
 VERSION = next(line.split('=',1)[1].strip() for line in (ROOT/'module.prop').read_text().splitlines() if line.startswith('version='))
 INSTALL = [
  'module.prop','config.defaults','customize.sh','action.sh','guardian.sh',
- 'post-fs-data.sh','service.sh','crash-monitor.sh','history-monitor.sh','selftest.sh','uninstall.sh',
+ 'post-fs-data.sh','service.sh','one-shot-offline-undo.sh','crash-monitor.sh','history-monitor.sh','selftest.sh','uninstall.sh',
  'lib/common.sh','lib/crash.sh','lib/history.sh','lib/quarantine.sh',
- 'lib/recovery-lab.sh','lib/quarantine-lab.sh','lib/qualification.sh','lib/policy.sh','lib/boot-probe.sh','lib/boot-trial.sh',
+ 'lib/recovery-lab.sh','lib/quarantine-lab.sh','lib/qualification.sh','lib/policy.sh','lib/boot-probe.sh','lib/boot-trial.sh','lib/one-shot.sh',
  'webroot/index.html','webroot/main.css','webroot/main.js','README.md','docs/ROADMAP.md',
 ]
-EXECUTABLE={'customize.sh','action.sh','guardian.sh','post-fs-data.sh','service.sh',
+EXECUTABLE={'customize.sh','action.sh','guardian.sh','post-fs-data.sh','service.sh','one-shot-offline-undo.sh',
  'crash-monitor.sh','history-monitor.sh','selftest.sh','uninstall.sh'}
 SKIP_DIRS={'.git','.devtool','.venv','dist','__pycache__','.pytest_cache','device-evidence'}
 SKIP_FILES={'.DS_Store','.devtool-wrapper.lock'}

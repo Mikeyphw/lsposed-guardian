@@ -110,3 +110,11 @@ A green boot-order receipt never automatically authorizes writes, restores, qual
 `./devtoolw check` still runs all 69 case-isolated fake-Vector tests, preserves individual timeout and evidence validation, and now also requires copy-only boot-trial fixture tests. Fake Python CLI helpers and per-test subprocesses use `-S` to avoid unnecessary site initialization. Host 69/69 passed in 13.67 seconds; Termux benchmark remains pending.
 
 Real boot-trial commands (`stage`, `status`, `cancel`) are explicit, isolated Devtool workflows, not part of ordinary `check` or CI; v0.9.2 boot hook is no-op unless the user stages a one-shot copy-only next-boot rehearsal. Vector's live DB remains untouched.
+
+## v0.9.3 controlled restore acceptance
+
+See [ONE_SHOT_REAL_RESTORE.md](ONE_SHOT_REAL_RESTORE.md). The explicit live-test workflows are excluded from normal `check`/`install`; hermetic one-shot fixture tests are included. A successful simulated test must never set `RECOVERY_DEVICE_QUALIFIED`. This release deliberately keeps `mode=OBSERVE` and the legacy pinned baseline unqualified.
+
+### Android unprivileged fixture fix (v0.9.3 replacement)
+
+The original v0.9.3 overlay was correctly rolled back by Termux because four one-shot tests used the real unprivileged UID and `chown` despite simulating a root-only Android boot hook. The replacement provides **fixture-local** `id`/`chown` mocks and negative checks for non-root undo and chown failure. The installed Guardian runtime, live Vector DB and automatic-recovery gates are not changed by this source validation. Root and unprivileged host suites must both pass. See `GUARD-DT-010` in the cumulative ledger. Real device restore remains unqualified.

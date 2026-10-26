@@ -9,6 +9,7 @@ MODDIR="${0%/*}"
 . "$MODDIR/lib/qualification.sh" || exit 1
 . "$MODDIR/lib/boot-probe.sh" || exit 1
 . "$MODDIR/lib/boot-trial.sh" || exit 1
+. "$MODDIR/lib/one-shot.sh" || exit 1
 . "$MODDIR/lib/policy.sh" || exit 1
 init_state || { echo 'Cannot initialize Guardian state (root required)' >&2; exit 1; }
 load_config
@@ -51,6 +52,10 @@ Usage: guardian.sh COMMAND [ARGS]
   boot-trial-stage --apply  Stage one-shot real-boot COPY-ONLY WAL rehearsal
   boot-trial-status         Inspect copied DB/WAL rehearsal and post-boot Vector health
   boot-trial-cancel         Cancel a not-yet-started copy-only trial
+  one-shot-preflight       Read-only readiness for manually staged LIVE DB restoration
+  one-shot-stage --apply   Explicitly arm ONE live Vector DB swap on next hardware boot
+  one-shot-status         Report actual swap and independent post-boot health
+  one-shot-cancel         Cancel a pending request BEFORE a swap begins
   quarantine PKG    Preview single-module quarantine
   quarantine PKG --apply  Disable one Vector module and save rollback evidence
   rollback PKG --apply    Re-enable only a Guardian-quarantined module
@@ -268,6 +273,18 @@ case "${1:-help}" in
   boot-trial-cancel)
     [ -z "${2:-}" ] || { echo "No arguments expected" >&2; exit 2; }
     bt_cancel ;;
+  one-shot-preflight)
+    [ -z "${2:-}" ] || exit 2
+    os_stage_checks ;;
+  one-shot-stage)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || exit 2
+    os_stage ;;
+  one-shot-status)
+    [ -z "${2:-}" ] || exit 2
+    os_status ;;
+  one-shot-cancel)
+    [ -z "${2:-}" ] || exit 2
+    os_cancel ;;
   quarantine-status) q_status ;;
   quarantine-ledger)
     if [ -s "$STATE_DIR/quarantine/events.tsv" ]; then

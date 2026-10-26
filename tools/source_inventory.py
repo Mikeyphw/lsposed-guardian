@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def inventory():
     paths = set(ROOT.glob('*.sh')) | set((ROOT/'lib').glob('*.sh'))
-    paths.update({ROOT/p for p in ('config.defaults','module.prop','tests/test_guardian.py','tests/test_boot_probe.py','tests/test_boot_trial.py','tests/test_devtool_contract.py','tools/run_host_tests.py')})
+    paths.update({ROOT/p for p in ('config.defaults','module.prop','tests/test_guardian.py','tests/test_boot_probe.py','tests/test_boot_trial.py','tests/test_one_shot.py','tests/test_devtool_contract.py','tools/run_host_tests.py')})
     rows = {}
     for path in sorted(paths):
         if not path.is_file():
