@@ -70,3 +70,18 @@ Finding: `early-boot-preflight` ran only after Android startup and cannot establ
 - **Evidence:** Running v0.9.3 `test_devtool_contract.py` while testing the unprivileged fix intermittently failed its nested `test_boot_probe.py` suite with `OSError: Directory not empty` during temporary fixture cleanup. The mock `service.sh` successful-boot path launched production-default crash/history collectors in the background, racing cleanup of their disposable state directory.
 - **Remedy:** Set `PASSIVE_CRASH_MONITOR=0` and `HISTORY_MONITOR=0` in the **test fixture config only** (same isolation pattern already used by the one-shot tests). Preserve real `service.sh` monitor behavior. Run the nested tests repeatedly and with a non-root UID to catch regressions.
 - **Status:** Fixture fix included in replacement v0.9.3 overlay; on-device source verification pending. Consider Devtool diagnostics of leaked daemon children or background processes in hermetic jobs (not yet verified as a Devtool bug).
+
+## GUARD-DT-009 — Persist device acceptance separately from host qualification (v0.9.4)
+
+- **Evidence:** Real one-shot boot restoration on 2026-10-27 returned post-boot `health=PASS`, yet v0.9.3 kept `transaction_phase=COMMITTED_PENDING_HEALTH`; `qualification` still printed `actual_early_boot_restore_test=NOT_VERIFIED`. This is receipt/reporting drift, **not** proof that the DB swap failed.
+- **Affected:** Guardian `lib/one-shot.sh`, `lib/qualification.sh`, Devtool device acceptance/reporting model; not the full hosted-CI qualification graph.
+- **Remediation:** v0.9.4 adds explicit idempotent, read-only-to-Vector receipt reconciliation `one-shot-finalize`, checks retained original DB-family SHA-256 evidence, and records `HEALTH_CONFIRMED` only on verified receipt + currently healthy enabled inventory. `qualification` shows granular historical passes but keeps full device recovery UNQUALIFIED.
+- **Upstream improvement:** Devtool typed acceptance receipts with boot identity, independent health observation, artifact checksums, evidence source/freshness, historical vs current state, and nonpromotable host-only gates.
+- **Status:** implemented in Guardian source and hermetic tests; live-device v0.9.4 reconciliation needs confirmation.
+
+## GUARD-DT-010 — Crash-history count regression needs provenance telemetry
+
+- **Evidence:** Device `doctor` showed 73 events before 2026-10-27 one-shot restoration and 8 afterward; Guardian's bounded `CRASH_MAX_EVENTS=400` does not itself account for a shrink from 73 to 8. Existing successful `crash_merge_file` tests preserve sub-limit evidence, but old file bytes weren't supplied to differentiate state loss, manual cleanup, provenance gap, or filesystem migration.
+- **Affected:** Guardian `lib/crash.sh`, monitoring evidence, Devtool acceptance/debug reports.
+- **Remediation:** add nonmutating `crash-audit` with current byte count, checksum, permissions, and retained count; label historical delta `UNKNOWN` until old-file evidence is provided. Suggested future enhancement: source-bound monotonic file generation/versioned snapshots, retention trim event receipts, and cross-boot digest tracking to distinguish deletion/recreation from intended truncation.
+- **Status:** audit tool implemented, root-device cause still open. Do not attribute the count drop to Vector restoration without evidence.

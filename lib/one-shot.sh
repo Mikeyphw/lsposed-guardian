@@ -271,6 +271,63 @@ os_early() {
   fi
   return 0
 }
+# Evidence-only reconciliation of the completed one-shot transaction. The
+# original database family and its offline undo checksums are never modified.
+# A receipt is a historical acceptance record, NOT a device-recovery permit.
+os_receipt_verified() {
+  [ ! -e "$OS_REQ" ] && [ ! -L "$OS_TX" ] || return 1
+  [ -s "$OS_TX/phase" ] && [ -s "$OS_REPORT" ] && [ -s "$OS_HEALTH" ] || return 1
+  case "$(cat "$OS_TX/phase")" in COMMITTED_PENDING_HEALTH|HEALTH_CONFIRMED) : ;; *) return 1;; esac
+  OS_RBOOT="$(sed -n 's/^boot_id=//p' "$OS_REPORT")"
+  OS_HBOOT="$(sed -n 's/^boot_id=//p' "$OS_HEALTH")"
+  [ -n "$OS_RBOOT" ] && [ "$OS_RBOOT" = "$OS_HBOOT" ] &&
+    [ "$(os_id "$OS_RBOOT")" = "$OS_RBOOT" ] || return 1
+  grep -Fxq 'assessment=COMMITTED_PENDING_HEALTH' "$OS_REPORT" &&
+  grep -Fxq 'phase=post-fs-data' "$OS_REPORT" &&
+  grep -Fxq 'phase=post-boot-stability' "$OS_HEALTH" &&
+  grep -Fxq 'vector=VECTOR_RESPONDING' "$OS_HEALTH" &&
+  grep -Fxq 'enabled_manifest=MATCH' "$OS_HEALTH" &&
+  grep -Fxq 'health=PASS' "$OS_HEALTH" &&
+  grep -Fxq 'original_family_retained=true' "$OS_HEALTH" || return 1
+  OS_RSRC="$(sed -n 's/^source_sha256=//p' "$OS_REPORT")"
+  OS_RDST="$(sed -n 's/^restored_sha256=//p' "$OS_REPORT")"
+  [ -n "$OS_RSRC" ] && [ "$OS_RSRC" = "$OS_RDST" ] &&
+    [ "${#OS_RSRC}" -eq 64 ] || return 1
+  [ "$(os_sha "$OS_ROOT/payload.db")" = "$OS_RSRC" ] || return 1
+  [ -s "$OS_TX/original.db" ] && [ -s "$OS_TX/original.sha" ] || return 1
+  for OS_EXT in '' -wal -shm -journal; do
+    if [ -f "$OS_TX/original.db$OS_EXT" ]; then
+      [ ! -L "$OS_TX/original.db$OS_EXT" ] &&
+      [ -s "$OS_TX/original.sha$OS_EXT" ] &&
+      [ "$(os_sha "$OS_TX/original.db$OS_EXT")" = "$(cat "$OS_TX/original.sha$OS_EXT")" ] || return 1
+    else
+      [ -f "$OS_TX/absent$OS_EXT" ] || return 1
+    fi
+  done
+  [ -s "$OS_ROOT/expected.enabled" ] || return 1
+}
+os_finalize() {
+  os_receipt_verified || { echo 'ONE_SHOT_FINALIZE_REFUSED: receipt or retained original family invalid' >&2; return 1; }
+  [ "$AUTO_RECOVERY" = 0 ] && [ "$RECOVERY_DEVICE_QUALIFIED" = 0 ] || return 1
+  # Validate current Vector availability and matching expected manifest, even
+  # when finalizing a v0.9.3 receipt after a subsequent, healthy reboot.
+  OS_FIN_MAN="$OS_ROOT/finalize-$$.enabled"
+  if ! boot_complete || ! cli_ready || ! vector status >/dev/null 2>&1 ||
+     ! vector_enabled_manifest "$OS_FIN_MAN" ||
+     ! cmp -s "$OS_FIN_MAN" "$OS_ROOT/expected.enabled"; then
+    rm -f "$OS_FIN_MAN"
+    echo 'ONE_SHOT_FINALIZE_REFUSED: current Vector state not verified' >&2
+    return 1
+  fi
+  rm -f "$OS_FIN_MAN"
+  if [ "$(cat "$OS_TX/phase")" != HEALTH_CONFIRMED ]; then
+    os_write_phase HEALTH_CONFIRMED || return 1
+  fi
+  echo 'PASS_GUARDIAN_ONE_SHOT_HEALTH_FINALIZED'
+  echo "qualified_restoration_boot=$OS_RBOOT"
+  echo 'original_family_retained=true'
+  echo 'automatic_recovery=DISABLED'
+}
 os_stable() {
   [ -s "$OS_TX/phase" ] || return 0
   [ "$(cat "$OS_TX/phase")" = COMMITTED_PENDING_HEALTH ] || return 0
@@ -295,6 +352,9 @@ automatic_recovery=DISABLED
 EOF
   mv "$OS_HEALTH.tmp.$$" "$OS_HEALTH"
   sync
+  if [ "$OS_HEALTH_STATE" = PASS ]; then
+    os_finalize >/dev/null 2>&1 || log WARN "One-shot health observed but receipt finalization deferred"
+  fi
 }
 os_status() {
   echo 'GUARDIAN REAL RESTORE ONE-SHOT (manual-only)'
@@ -304,15 +364,14 @@ os_status() {
   [ ! -s "$OS_TX/phase" ] || echo "transaction_phase=$(cat "$OS_TX/phase")"
   [ ! -s "$OS_REPORT" ] || cat "$OS_REPORT"
   [ ! -s "$OS_HEALTH" ] || cat "$OS_HEALTH"
-  OS_NOW="$(os_id "$(boot_id)")"
-  if [ ! -e "$OS_REQ" ] && [ -s "$OS_TX/phase" ] &&
-     [ "$(cat "$OS_TX/phase")" = COMMITTED_PENDING_HEALTH ] &&
-     grep -Fxq "boot_id=$OS_NOW" "$OS_REPORT" 2>/dev/null &&
-     grep -Fxq 'assessment=COMMITTED_PENDING_HEALTH' "$OS_REPORT" 2>/dev/null &&
-     grep -Fxq "boot_id=$OS_NOW" "$OS_HEALTH" 2>/dev/null &&
-     grep -Fxq 'health=PASS' "$OS_HEALTH" 2>/dev/null; then
+  if os_receipt_verified; then
     echo 'PASS_GUARDIAN_REAL_ONE_SHOT_RESTORE'
-    echo 'note=Original DB family retained for offline rollback; no automatic recovery qualification implied.'
+    echo 'note=Historical health-verified receipt only; original DB family retained; automatic recovery NOT qualified.'
+    if [ "$(cat "$OS_TX/phase")" = HEALTH_CONFIRMED ]; then
+      echo 'finalization=HEALTH_CONFIRMED'
+    else
+      echo 'finalization=PENDING_EXPLICIT_RECONCILIATION'
+    fi
   else
     echo 'ONE_SHOT_RESTORE_NOT_QUALIFIED'
   fi

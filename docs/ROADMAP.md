@@ -185,3 +185,20 @@ negative-test coverage. It is NOT evidence of a qualified physical device. The
 - [ ] Validate custom recovery offline undo of retained original family, SELinux labels and sidecars
 - [ ] Exclude races with early Vector DB access via stronger framework startup coordination, and establish power-interruption recovery evidence
 - [ ] Device automatic recovery qualification remains 0; automatic quarantine remains disabled
+
+## v0.9.4 — acceptance consolidation (source prepared 2026-10-27)
+
+Evidence received from the owner's **actual Android 13 / Vector 3112** environment (operator-provided receipts; not independently reproduced by hosted CI):
+
+- [x] `PASS_GUARDIAN_LIVE_VECTOR_QUARANTINE_ROUNDTRIP` on `eu.hxreborn.remembermysort`. Twenty-module enabled/disabled inventory identical before/after; event ledger `QUARANTINED` then `ROLLED_BACK`; zero pending quarantines.
+- [x] `PASS_GUARDIAN_BOOT_ORDER_OBSERVED` from one real post-fs-data run with `boot_completed=0`, no `vectord` PID, followed by `VECTOR_RESPONDING`. **Does not establish exclusive DB locks.**
+- [x] `PASS_GUARDIAN_REAL_BOOT_COPY_ONLY_TRIAL`: isolated WAL transaction during a real boot; live main DB unchanged and Vector responded later. Metadata fields `boot_completed=unknown` and `context=Oct` are explicitly NOT qualified as boot or SELinux evidence.
+- [x] `PASS_GUARDIAN_REAL_ONE_SHOT_RESTORE`, boot ID `dc83413b-5588-4dff-9c34-905f83767399`: actual main DB SHA-256 changed from `f0b5ddc885183ac46e5c7dfbcbeb609ff7e31d21ac48b1721d916d72f1163c1a` to rescue source `2f90f4d986d2e0874a67a81e1953720af08d1b0913823b327f8a8ccb20827e3c`. Post-boot `health=PASS`, Vector 3112 responding, exact 12 enabled modules matched, receipt reports original DB family retained. Verified independent rescue backup remained `backup_integrity=PASS`.
+- [x] v0.9.4 source adds `one-shot-finalize`: checks matching early/stable receipts, payload digest, preserved DB/WAL/SHM/journal checksums, and *current* healthy Vector enabled manifest before atomically sealing the transaction phase `HEALTH_CONFIRMED`; supports prior v0.9.3 `COMMITTED_PENDING_HEALTH` without re-running a swap. Automatic recovery remains disabled.
+- [x] Read-only `qualification` distinguishes specific on-device historical acceptance evidence from overall `device_restore_qualification=UNQUALIFIED`; quarantine ledger pairs are reported as *historical ledger evidence*, not independent attestation.
+- [x] `crash-audit` provides current file identity and count without guessing the cause of the reported retained event drop from 73 to 8. The 400-record retention cap alone does not explain a drop of this size; old raw history is not present in the provided diagnostic evidence. No evidence recovery is claimed.
+- [ ] Confirm v0.9.4 installed-device finalization and persisted `HEALTH_CONFIRMED` evidence with no new swap or reboot test.
+- [ ] Investigate crash-history file transitions using real on-device snapshots/logs/backups. `retained_events=8` alone is not proof of records being lost, deleted, or trimmed.
+- [ ] Run an offline custom recovery **undo** test of the retained original SQLite family (not the same as backup `status` PASS); only when separately authorized and with rescue path ready.
+- [ ] Qualify real interrupted-boot/power-loss behavior and startup exclusivity. A successful one-shot does not certify every failure boundary.
+- [ ] Automatic restore/quarantine still disabled; pinned `unknown_legacy` baseline remains `legacy_header_only`, and `RECOVERY_DEVICE_QUALIFIED=0`. No auto-promotion or arming.

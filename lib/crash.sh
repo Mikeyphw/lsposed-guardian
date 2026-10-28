@@ -161,3 +161,25 @@ crash_triage() {
   echo 'For per-process scope candidates, use: guardian.sh correlate PACKAGE'
   echo 'For individual stored records, use: guardian.sh events'
 }
+
+# Current retained-event audit. An earlier count is not reconstructed from newer
+# data: collection is bounded but must not claim an unexplained drop was trim.
+crash_audit() {
+  echo 'GUARDIAN CRASH HISTORY RETENTION AUDIT (read-only)'
+  echo 'historical_counts_from_prior_reports=NOT_INFERRED'
+  echo "retention_limit=$CRASH_MAX_EVENTS"
+  if [ ! -f "$CRASH_FILE" ]; then
+    echo 'history_state=MISSING'
+    echo 'retained_events=0'
+    echo 'retention_delta=UNKNOWN'
+    return 0
+  fi
+  echo 'history_state=PRESENT'
+  echo "retained_events=$(crash_count_all)"
+  echo "history_sha256=$(db_sha "$CRASH_FILE")"
+  echo "history_bytes=$(db_bytes "$CRASH_FILE")"
+  echo "history_owner=$(stat -c '%u:%g' "$CRASH_FILE" 2>/dev/null || echo unknown)"
+  echo "history_mode=$(stat -c '%a' "$CRASH_FILE" 2>/dev/null || echo unknown)"
+  echo 'retention_delta=UNKNOWN_WITHOUT_PRIOR_FILE_OR_TRIM_RECEIPT'
+  echo 'automatic_quarantine=DISABLED'
+}

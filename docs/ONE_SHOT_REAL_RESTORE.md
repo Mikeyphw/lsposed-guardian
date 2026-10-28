@@ -34,3 +34,9 @@
 - Several SQLite database-family path changes are not atomically grouped. `sync` plus retained journal copies improve recoverability but cannot guarantee survival of every hardware power-loss point without disposable power-interruption testing.
 - `one-shot-status` cannot assert the old crash history or all dynamic hooks have identical runtime behavior after restore; it only checks Vector health and enabled manifest, supplemented by separate lab results.
 - The existing `qualification` command continues to report overall `UNQUALIFIED`. Do not modify `RECOVERY_DEVICE_QUALIFIED`, use unattended `restore --apply`, or arm automatic recovery based only on a one-shot receipt.
+
+## v0.9.4 historical acceptance addendum (2026-10-27)
+
+The owner's actual device reported successful v0.9.3 restore and post-boot Vector health on boot `dc83413b-5588-4dff-9c34-905f83767399`, with 12/12 enabled modules matching a SHA-256 verified backup. This supersedes the earlier *device acceptance pending* status for **that one manual round-trip only**. Original DB family was reported retained; it has not yet been independently restored from custom recovery.
+
+v0.9.4 `one-shot-finalize` verifies the historical receipts and retained originals, rechecks current Vector enabled manifest, and atomically seals only the transaction status file. Source tests include idempotency, older-boot migration, damaged original rejection, and forged/failed-health rejection. The source and installed runtime must both be v0.9.4 before invoking this command. No fresh destructive test is needed. Automatic restore, exclusive DB access and power-loss reliability remain UNQUALIFIED.

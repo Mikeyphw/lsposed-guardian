@@ -55,6 +55,8 @@ Usage: guardian.sh COMMAND [ARGS]
   one-shot-preflight       Read-only readiness for manually staged LIVE DB restoration
   one-shot-stage --apply   Explicitly arm ONE live Vector DB swap on next hardware boot
   one-shot-status         Report actual swap and independent post-boot health
+  one-shot-finalize       Verify and seal existing HEALTH=PASS receipt (no DB mutation)
+  crash-audit             Read-only retained crash-history provenance
   one-shot-cancel         Cancel a pending request BEFORE a swap begins
   quarantine PKG    Preview single-module quarantine
   quarantine PKG --apply  Disable one Vector module and save rollback evidence
@@ -282,6 +284,9 @@ case "${1:-help}" in
   one-shot-status)
     [ -z "${2:-}" ] || exit 2
     os_status ;;
+  one-shot-finalize)
+    [ -z "${2:-}" ] || exit 2
+    os_finalize ;;
   one-shot-cancel)
     [ -z "${2:-}" ] || exit 2
     os_cancel ;;
@@ -467,6 +472,9 @@ case "${1:-help}" in
     rm -f "$TMP_MODS"
     [ "$FOUND" -eq 1 ] || echo '  (none found; this is not proof no hooks are involved)'
     ;;
+  crash-audit)
+    [ -z "${2:-}" ] || exit 2
+    crash_audit ;;
   crashes)
     if ! command -v logcat >/dev/null 2>&1; then echo 'logcat unavailable' >&2; exit 1; fi
     echo 'Crash-buffer process counts (not definitive proof of hook causality):'

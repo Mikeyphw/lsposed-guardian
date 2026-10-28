@@ -104,6 +104,72 @@ exit 1''')
         self.call('service.sh')
         self.assertIn('PASS_GUARDIAN_REAL_ONE_SHOT_RESTORE',self.call('guardian.sh','one-shot-status'))
         self.assertTrue((self.state/'one-shot/transaction/original.db').exists())
+    def test_v094_stable_boot_auto_finalizes_receipt(self):
+        self.stage();self.boot_again();self.call('service.sh')
+        phase=self.state/'one-shot/transaction/phase'
+        self.assertEqual(phase.read_text().strip(),'HEALTH_CONFIRMED')
+        receipt=self.call('guardian.sh','one-shot-status')
+        self.assertIn('finalization=HEALTH_CONFIRMED',receipt)
+        self.assertIn('PASS_GUARDIAN_REAL_ONE_SHOT_RESTORE',receipt)
+        qual=self.call('guardian.sh','qualification')
+        self.assertIn('actual_early_boot_restore_test=PASS_MANUAL_ONE_SHOT_RECEIPT',qual)
+        self.assertIn('device_restore_qualification=UNQUALIFIED',qual)
+        self.assertEqual(self.db.read_bytes(),self.rdb.read_bytes())
+
+    def test_v094_finalize_legacy_healthy_receipt_later_boot(self):
+        self.stage();self.boot_again();self.call('service.sh')
+        phase=self.state/'one-shot/transaction/phase'
+        phase.write_text('COMMITTED_PENDING_HEALTH\n')
+        # This migrates the real v0.9.3 receipt without changing live data.
+        self.boot.write_text(BID1+'\n')
+        self.assertIn('PASS_GUARDIAN_ONE_SHOT_HEALTH_FINALIZED',
+                      self.call('guardian.sh','one-shot-finalize'))
+        self.assertEqual(phase.read_text().strip(),'HEALTH_CONFIRMED')
+        self.assertIn('PASS_GUARDIAN_ONE_SHOT_HEALTH_FINALIZED',
+                      self.call('guardian.sh','one-shot-finalize'))
+
+    def test_v094_finalize_rejects_damaged_original_and_never_changes_db(self):
+        self.stage();self.boot_again();self.call('service.sh')
+        phase=self.state/'one-shot/transaction/phase';phase.write_text('COMMITTED_PENDING_HEALTH\n')
+        original=self.state/'one-shot/transaction/original.db'
+        original.write_bytes(b'DAMAGED')
+        before=self.family()
+        self.call('guardian.sh','one-shot-finalize',expected=1)
+        self.assertEqual(self.family(),before)
+        self.assertEqual(phase.read_text().strip(),'COMMITTED_PENDING_HEALTH')
+        self.assertNotIn('PASS_GUARDIAN_REAL_ONE_SHOT_RESTORE',
+                         self.call('guardian.sh','one-shot-status'))
+
+    def test_v094_finalize_rejects_failed_health_receipt(self):
+        self.stage();self.boot_again();self.call('service.sh')
+        phase=self.state/'one-shot/transaction/phase';phase.write_text('COMMITTED_PENDING_HEALTH\n')
+        health=self.state/'one-shot/stable.txt'
+        health.write_text(health.read_text().replace('health=PASS','health=FAILED'))
+        self.call('guardian.sh','one-shot-finalize',expected=1)
+        self.assertEqual(phase.read_text().strip(),'COMMITTED_PENDING_HEALTH')
+
+    def test_v094_historical_quarantine_ledger_pair_is_reported_without_arming(self):
+        qdir=self.state/'quarantine';qdir.mkdir(exist_ok=True)
+        a='a'*64;b='b'*64
+        (qdir/'events.tsv').write_text(
+            f'QUARANTINED\teu.hxreborn.remembermysort\t123\t{BID1}\t3112\tMANUAL_UNATTRIBUTED\t{a}\t{b}\n'
+            f'ROLLED_BACK\teu.hxreborn.remembermysort\t124\t{BID1}\t3112\tMANUAL_UNATTRIBUTED\t{b}\t{a}\n')
+        qual=self.call('guardian.sh','qualification')
+        self.assertIn('live_quarantine_roundtrip=PASS_HISTORICAL_LEDGER_PAIR',qual)
+        self.assertIn('device_restore_qualification=UNQUALIFIED',qual)
+        self.assertIn('automatic_quarantine=DISABLED',qual)
+        (qdir/'events.tsv').write_text(f'QUARANTINED\teu.hxreborn.remembermysort\t123\t{BID1}\t3112\tMANUAL_UNATTRIBUTED\t{a}\t{b}\n')
+        self.assertIn('live_quarantine_roundtrip=NOT_VERIFIED',self.call('guardian.sh','qualification'))
+
+    def test_v094_crash_audit_is_read_only(self):
+        f=self.state/'crashes/events.tsv'; f.parent.mkdir(exist_ok=True)
+        f.write_text('abc\t1793130000\tcom.example\t123\n')
+        before=f.read_bytes()
+        audit=self.call('guardian.sh','crash-audit')
+        self.assertIn('retained_events=1',audit)
+        self.assertIn('retention_delta=UNKNOWN_WITHOUT_PRIOR_FILE_OR_TRIM_RECEIPT',audit)
+        self.assertEqual(f.read_bytes(),before)
+
     def test_custom_recovery_offline_undo_restores_original_family(self):
         self.stage();self.boot_again()
         self.assertEqual(self.db.read_bytes(),self.rdb.read_bytes())

@@ -118,3 +118,9 @@ See [ONE_SHOT_REAL_RESTORE.md](ONE_SHOT_REAL_RESTORE.md). The explicit live-test
 ### Android unprivileged fixture fix (v0.9.3 replacement)
 
 The original v0.9.3 overlay was correctly rolled back by Termux because four one-shot tests used the real unprivileged UID and `chown` despite simulating a root-only Android boot hook. The replacement provides **fixture-local** `id`/`chown` mocks and negative checks for non-root undo and chown failure. The installed Guardian runtime, live Vector DB and automatic-recovery gates are not changed by this source validation. Root and unprivileged host suites must both pass. See `GUARD-DT-010` in the cumulative ledger. Real device restore remains unqualified.
+
+## v0.9.4 acceptance-record finalization
+
+This release **does not stage or perform any Vector database mutation**. It adds `one-shot-finalize` for a previously healthy v0.9.3 transaction, an idempotent receipt check that verifies retained original family checksums before changing only the Guardian phase marker to `HEALTH_CONFIRMED`. It never removes the original DB-family backup. `guardian.sh qualification` reports manual one-shot, boot-order, copy-only trial and quarantine-ledger acceptance separately from the full `UNQUALIFIED` device recovery policy. `guardian.sh crash-audit` is read-only; a historic 73-to-8 count drop remains unexplained and is not treated as evidence of crash causality or automatic policy.
+
+On device: after Devtool `check`, interactive `install` and ordinary reboot, inspect `one-shot-status`, run `sudo /system/bin/sh /data/adb/modules/lsposed_guardian/guardian.sh one-shot-finalize` **once** if the old `COMMITTED_PENDING_HEALTH` state remains, then run `qualification`, `crash-audit`, and `one-shot-status`. Do not stage another restore, promote a baseline or enable automatic recovery. External custom recovery undo and power-interruption testing remain distinct open gates.
