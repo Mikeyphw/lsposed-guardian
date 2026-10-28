@@ -110,6 +110,16 @@ description = "Read-only early-boot recovery environment inventory; NEVER attemp
 workflow = "early-boot-preflight"
 target = "guardian"
 
+[wrapper.commands.runtime-parity]
+description = "Read-only installed-vs-staged KernelSU file hashes; recognize pending reboot"
+workflow = "runtime-parity"
+target = "guardian"
+
+[wrapper.commands.acceptance-export]
+description = "Export historical manual-device receipts without authorizing auto recovery"
+workflow = "acceptance-export"
+target = "guardian"
+
 [wrapper.commands.device-check]
 description = "Read-only Guardian device acceptance with Termux clipboard output"
 workflow = "device-check"
@@ -287,6 +297,30 @@ command = ["python3", "tools/early_boot_preflight.py"]
 inputs = ["tools/early_boot_preflight.py"]
 metadata = { device_required = true, root_required = true, read_only = true, device_restoration_qualified = false }
 
+[targets.guardian.jobs.runtime-parity]
+runner = "command"
+command = ["python3", "tools/runtime_parity.py"]
+inputs = ["tools/runtime_parity.py", "tools/runtime_parity_root.sh"]
+metadata = { root_required = true, read_only = true, pending_reboot_aware = true, never_use_in_ci = true }
+
+[targets.guardian.jobs.acceptance-export]
+runner = "command"
+command = ["python3", "tools/acceptance_export.py"]
+inputs = ["tools/acceptance_export.py"]
+metadata = { root_required = true, read_only = true, device_qualified = false, never_use_in_ci = true }
+
+[targets.guardian.jobs.personal-auto-tests]
+runner = "command"
+command = ["python3", "-S", "-m", "unittest", "discover", "-s", "tests", "-p", "test_personal_auto.py", "-q"]
+inputs = ["lib/auto-quarantine.sh", "lib/safe-mode.sh", "lib/quarantine.sh", "crash-monitor.sh", "guardian.sh", "tests/test_personal_auto.py"]
+metadata = { read_only = true, family = "personal-auto", device_qualified = false }
+
+[targets.guardian.jobs.parity-tests]
+runner = "command"
+command = ["python3", "-S", "-m", "unittest", "discover", "-s", "tests", "-p", "test_parity_continuity.py", "-q"]
+inputs = ["tools/runtime_parity.py", "tools/runtime_parity_root.sh", "tools/acceptance_export.py", "tools/upgrade_receipt.sh", "lib/crash.sh", "tests/test_parity_continuity.py"]
+metadata = { read_only = true, isolated = true, device_qualified = false }
+
 [targets.guardian.jobs.device-diagnostics]
 runner = "command"
 command = ["sh", "tools/device_check.sh"]
@@ -308,6 +342,8 @@ test = [
   { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
   { id = "boot-trial-tests", ref = "job:boot-trial-tests", depends_on = ["preflight"] },
   { id = "one-shot-tests", ref = "job:one-shot-tests", depends_on = ["preflight"] },
+  { id = "parity-tests", ref = "job:parity-tests", depends_on = ["preflight"] },
+  { id = "personal-auto-tests", ref = "job:personal-auto-tests", depends_on = ["preflight"] },
 ]
 build = [
   { id = "preflight", ref = "job:source-check", depends_on = [] },
@@ -323,7 +359,9 @@ check = [
   { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
   { id = "boot-trial-tests", ref = "job:boot-trial-tests", depends_on = ["preflight"] },
   { id = "one-shot-tests", ref = "job:one-shot-tests", depends_on = ["preflight"] },
-  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model", "boot-trial-tests", "one-shot-tests"] },
+  { id = "parity-tests", ref = "job:parity-tests", depends_on = ["preflight"] },
+  { id = "personal-auto-tests", ref = "job:personal-auto-tests", depends_on = ["preflight"] },
+  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model", "boot-trial-tests", "one-shot-tests", "parity-tests", "personal-auto-tests"] },
   { id = "package", ref = "job:package", depends_on = ["qualification"] },
   { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
 ]
@@ -336,12 +374,16 @@ install = [
   { id = "wal-model", ref = "job:early-boot-model", depends_on = ["preflight"] },
   { id = "boot-trial-tests", ref = "job:boot-trial-tests", depends_on = ["preflight"] },
   { id = "one-shot-tests", ref = "job:one-shot-tests", depends_on = ["preflight"] },
-  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model", "boot-trial-tests", "one-shot-tests"] },
+  { id = "parity-tests", ref = "job:parity-tests", depends_on = ["preflight"] },
+  { id = "personal-auto-tests", ref = "job:personal-auto-tests", depends_on = ["preflight"] },
+  { id = "qualification", ref = "job:host-qualification", depends_on = ["unit", "contract", "ui", "ci-parity", "wal-model", "boot-trial-tests", "one-shot-tests", "parity-tests", "personal-auto-tests"] },
   { id = "package", ref = "job:package", depends_on = ["qualification"] },
   { id = "verify", ref = "job:verify-package", depends_on = ["package"] },
   { id = "install", ref = "job:flash-ksu", depends_on = ["verify"] },
 ]
 device-check = [{ id = "device", ref = "job:device-diagnostics", depends_on = [] }]
+runtime-parity = [{ id = "parity", ref = "job:runtime-parity", depends_on = [] }]
+acceptance-export = [{ id = "export", ref = "job:acceptance-export", depends_on = [] }]
 live-quarantine-preview = [{ id = "preflight", ref = "job:live-quarantine-preview", depends_on = [] }]
 live-quarantine-gate = [{ id = "roundtrip", ref = "job:live-quarantine-apply", depends_on = [] }]
 early-boot-preflight = [{ id = "inventory", ref = "job:early-boot-inventory", depends_on = [] }]
@@ -405,3 +447,10 @@ name = "Hermetic one-shot real-file restore and fail-closed fixture"
 runner = "command"
 command = ["python3", "-S", "-m", "unittest", "discover", "-s", "tests", "-p", "test_one_shot.py", "-q"]
 timeout_seconds = 180
+
+[[test]]
+id = "guardian-parity-continuity"
+name = "Isolated KernelSU pending-reboot and crash-continuity regression"
+runner = "command"
+command = ["python3", "-S", "-m", "unittest", "discover", "-s", "tests", "-p", "test_parity_continuity.py", "-q"]
+timeout_seconds = 120

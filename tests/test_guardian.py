@@ -185,20 +185,13 @@ exit 1
         for i in range(2,6): self.next_boot('boot-'+str(i))
         self.assertEqual(self.get_version(),0)
 
-    def test_armed_recovery_after_two_consecutive_failed_hardware_boots(self):
+    def test_legacy_automatic_restore_retired_even_after_failed_boots(self):
         self.good_boot()
-        self.assertIn('AUTO_RECOVERY=1', self.run_shell('guardian.sh','arm'))
+        self.run_shell('guardian.sh','arm',expect=1)
         self._make_db(version=0)
-        self.next_boot('boot-two')
+        for boot in ('boot-two','boot-three','boot-four'):
+            self.next_boot(boot)
         self.assertEqual(self.get_version(),0)
-        self.next_boot('boot-three')
-        self.assertEqual(self.get_version(),0)
-        self.next_boot('boot-four')
-        self.assertEqual(self.get_version(),1)
-        self.assertTrue((self.state/'boot/recovery-performed').exists())
-        self.next_boot('boot-five')
-        self.assertEqual(self.get_version(),1)
-        self.run_shell('service.sh')
         self.assertFalse((self.state/'boot/recovery-performed').exists())
 
     def test_same_kernel_boot_is_not_counted_twice(self):
@@ -208,24 +201,21 @@ exit 1
         self.next_boot('boot-two')
         self.assertEqual((self.state/'boot/failures').read_text().strip(),'1')
 
-    def test_manual_restore_queued_without_rebooting(self):
+    def test_legacy_manual_restore_refused_and_never_edits_db(self):
         self.good_boot()
         self._make_db(version=0)
-        self.run_shell('guardian.sh','restore','--apply')
-        self.assertEqual(self.get_version(),0)
+        self.run_shell('guardian.sh','restore','--apply',expect=1)
         self.next_boot('boot-two')
-        self.assertEqual(self.get_version(),1)
+        self.assertEqual(self.get_version(),0)
         self.assertFalse((self.state/'boot/manual-restore').exists())
 
-    def test_running_daemon_prevents_offline_restore(self):
+    def test_legacy_auto_config_never_mutates_live_db(self):
         self.good_boot()
-        self.run_shell('guardian.sh','arm')
+        config=self.state/'config.conf'
+        config.write_text(config.read_text().replace('AUTO_RECOVERY=0','AUTO_RECOVERY=1'))
         self._make_db(version=0)
-        self.next_boot('boot-two')
-        self.next_boot('boot-three')
-        env=self.env.copy();env['FAKE_VECTOR_RUNNING']='1'
-        self.boot.write_text('boot-four\n')
-        self.run_shell('post-fs-data.sh',env=env)
+        for boot in ('boot-two','boot-three','boot-four'):
+            self.next_boot(boot)
         self.assertEqual(self.get_version(),0)
 
     def test_vector_disabling_is_verified_by_readback(self):
@@ -256,7 +246,7 @@ exit 1
 
     def test_vector_version_change_blocks_restore(self):
         self.good_boot()
-        self.run_shell('guardian.sh','arm')
+        self.run_shell('guardian.sh','arm',expect=1)
         self._make_db(version=0)
         self.vector_prop.write_text('id=zygisk_vector\nversionCode=101\n')
         self.next_boot('boot-two');self.next_boot('boot-three');self.next_boot('boot-four')
@@ -311,7 +301,7 @@ exit 1
         self.assertEqual(0, json.loads(self.run_shell('guardian.sh','report'))['stored_crash_events'])
 
     def test_invalid_snapshot_fails_closed(self):
-        self.good_boot();self.run_shell('guardian.sh','arm')
+        self.good_boot();self.run_shell('guardian.sh','arm',expect=1)
         (self.state/'snapshots/last-good.db').write_bytes(b'not sql')
         self._make_db(version=0)
         self.next_boot('boot-two');self.next_boot('boot-three');self.next_boot('boot-four')

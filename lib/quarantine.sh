@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# Manual-only quarantine; no crash process can call this as an automatic decision.
+# Journaled quarantine shared by explicit manual operations and narrowly allowlisted auto response.
 QROOT="$STATE_DIR/quarantine"
 QACTIVE="$QROOT/active"
 QPENDING="$QROOT/pending"
@@ -41,7 +41,7 @@ q_expect_only_module_change() {
 }
 q_event() {
   # Only bounded, validated values are written; the transaction does not imply causality.
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$(date +%s)" "$(boot_id | tr -cd 'a-fA-F0-9-')" "$(vector_version_code)" "MANUAL_UNATTRIBUTED" "$3" "$4" >> "$QLEDGER"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$(date +%s)" "$(boot_id | tr -cd 'a-fA-F0-9-')" "$(vector_version_code)" "${Q_ATTRIBUTION:-MANUAL_UNATTRIBUTED}" "$3" "$4" >> "$QLEDGER"
 }
 q_status() {
   q_init || return 1
@@ -87,6 +87,8 @@ q_preview() {
   q_cleanup_inventory
 }
 q_apply() {
+  Q_ATTRIBUTION=MANUAL_UNATTRIBUTED
+  [ "${2:-}" != auto ] || Q_ATTRIBUTION=AUTO_CORRELATED_NOT_CAUSAL
   q_init && q_lock || return 1
   PK="$1"
   if [ -e "$QPENDING/$PK.record" ] || [ -e "$QPENDING/$PK.rollback" ] || [ -e "$QACTIVE/$PK.record" ]; then
@@ -99,7 +101,7 @@ q_apply() {
   BEFORE="$QPENDING/$PK.before"
   cp "$QROOT/now-$$.enabled" "$BEFORE" || { q_cleanup_inventory; q_unlock; return 1; }
   HASH="$(db_sha "$BEFORE")"
-  RECORD="$(date +%s)|$(boot_id | tr -cd 'a-fA-F0-9-')|$(vector_version_code)|$HASH|MANUAL_UNATTRIBUTED"
+  RECORD="$(date +%s)|$(boot_id | tr -cd 'a-fA-F0-9-')|$(vector_version_code)|$HASH|$Q_ATTRIBUTION"
   if ! write_atomic "$QPENDING/$PK.record" "$RECORD"; then
     rm -f "$BEFORE"; q_cleanup_inventory; q_unlock; return 1
   fi
@@ -119,7 +121,7 @@ q_apply() {
   fi
   rm -f "$QPENDING/$PK.record" "$QPENDING/$PK.before"
   q_cleanup_inventory; q_unlock
-  log QUARANTINE "Manually disabled $PK; reversible record saved; no hook causality assigned"
+  log QUARANTINE "Disabled $PK ($Q_ATTRIBUTION); reversible record saved; no hook causality assigned"
   echo "QUARANTINED $PK: confirmed disabled; reversible record retained. Running hooks may persist."
 }
 q_rollback() {
@@ -174,7 +176,7 @@ q_reconcile() {
   # function's shared OUT variable. Some Android shells differ in `read` state.
   REC="$(LC_ALL=C sed -n '1p' "$QPENDING/$PK.record")"
   case "$REC" in
-    *'|MANUAL_UNATTRIBUTED') : ;;
+    *'|MANUAL_UNATTRIBUTED'|*'|AUTO_CORRELATED_NOT_CAUSAL') : ;;
     *)
       echo 'Unexpected transaction record: missing manual-attribution marker' >&2
       q_unlock; return 1 ;;

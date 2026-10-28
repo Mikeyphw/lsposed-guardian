@@ -30,8 +30,20 @@ load_config() {
   PASSIVE_CRASH_MONITOR=1 CRASH_POLL_SECONDS=60 CRASH_WINDOW_SECONDS=300
   RECOVERY_DEVICE_QUALIFIED=0 CRASH_EXCLUDE_PACKAGES=com.openai.chatgpt
   HISTORY_MONITOR=1 HISTORY_POLL_SECONDS=180 HISTORY_MAX_AGE_SECONDS=240
+  AUTO_QUARANTINE=0 AUTO_QUARANTINE_ALLOWLIST= AUTO_QUARANTINE_COOLDOWN_SECONDS=43200 AUTO_SAFE_MODE=0
   [ -f "$CFG" ] && . "$CFG"
   case "$AUTO_RECOVERY" in 0|1) : ;; *) AUTO_RECOVERY=0 ;; esac
+  # Legacy unattended SQLite restore is deliberately retired. Never let its
+  # persisted config flag re-enable the unsafe unjournaled restore function.
+  case "$AUTO_QUARANTINE" in 0|1) : ;; *) AUTO_QUARANTINE=0 ;; esac
+  case "$AUTO_SAFE_MODE" in 0|1) : ;; *) AUTO_SAFE_MODE=0 ;; esac
+  case "$AUTO_QUARANTINE_ALLOWLIST" in
+    *[!a-zA-Z0-9_.,]*|*..*|*,,*) AUTO_QUARANTINE=0; AUTO_QUARANTINE_ALLOWLIST= ;; esac
+  if ! is_number "$AUTO_QUARANTINE_COOLDOWN_SECONDS" ||
+     [ "$AUTO_QUARANTINE_COOLDOWN_SECONDS" -lt 3600 ] ||
+     [ "$AUTO_QUARANTINE_COOLDOWN_SECONDS" -gt 604800 ]; then
+    AUTO_QUARANTINE_COOLDOWN_SECONDS=43200
+  fi
   case "$RECOVERY_DEVICE_QUALIFIED" in 0|1) : ;; *) RECOVERY_DEVICE_QUALIFIED=0 ;; esac
   # Explicit user instruction: ChatGPT crashes are unrelated to LSPosed.
   # Preserve this exclusion even when upgrading old config.conf without the key.
@@ -164,43 +176,10 @@ snapshot_integrity_level() {
 
 # Explicitly offline-only. Never write over a database while Vector may have it open.
 offline_restore() {
-  SOURCE="$1"
-  [ "$SOURCE" = "$SNAP_DIR/last-good.db" ] || { log ERROR 'Unexpected restore source'; return 1; }
-  recovery_baseline_ready || { log ERROR 'Snapshot lacks verified integrity or is incomplete'; return 1; }
-  SAVED_VERSION="$(read_first "$SNAP_DIR/last-good.vector-version")"
-  LIVE_VERSION="$(vector_version_code)"
-  if [ -z "$SAVED_VERSION" ] || [ -z "$LIVE_VERSION" ] || [ "$SAVED_VERSION" != "$LIVE_VERSION" ]; then
-    log ERROR "Refusing restore: Vector version missing or changed (snapshot=$SAVED_VERSION current=$LIVE_VERSION)"
-    return 1
-  fi
-  if command -v pidof >/dev/null 2>&1 && pidof vectord >/dev/null 2>&1; then
-    log ERROR 'Refusing offline restore: Vector daemon already started'
-    return 1
-  fi
-  DB_DIR="${DB%/*}"
-  [ -d "$DB_DIR" ] || { log ERROR 'Vector configuration directory missing'; return 1; }
-  TEMP_DB="$DB.guardian-new.$$"
-  cp "$SOURCE" "$TEMP_DB" || { log ERROR 'Cannot prepare offline snapshot'; return 1; }
-  chmod 600 "$TEMP_DB" 2>/dev/null || :
-  chown 0:0 "$TEMP_DB" 2>/dev/null || :
-  if command -v restorecon >/dev/null 2>&1; then
-    restorecon "$TEMP_DB" >/dev/null 2>&1 || :
-  fi
-  [ "$(db_sha "$TEMP_DB")" = "$(read_first "$SNAP_DIR/last-good.sha256")" ] || {
-    rm -f "$TEMP_DB"; log ERROR 'Staged restore digest mismatch'; return 1;
-  }
-  # WAL records from the crashed configuration must not replay on top of the restore.
-  # This operation is allowed only before the daemon has opened its DB.
-  if ! rm -f "$DB-wal" "$DB-shm" "$DB-journal"; then
-    rm -f "$TEMP_DB"; log ERROR 'Could not clear stale Vector journal'; return 1
-  fi
-  if ! mv -f "$TEMP_DB" "$DB"; then
-    log ERROR 'Could not atomically replace Vector DB'; return 1
-  fi
-  if command -v restorecon >/dev/null 2>&1; then
-    restorecon "$DB" >/dev/null 2>&1 || :
-  fi
-  log RECOVERY 'Restored last-known-good Vector database before daemon startup'
+  # RETIRED: the legacy implementation removed live WAL/SHM before persisting
+  # a rollback journal. All restoration must use the guarded one-shot engine.
+  log ERROR 'Legacy unjournaled offline_restore retired; use one-shot-stage'
+  return 1
 }
 
 # Reads the module configuration from Vector's authenticated CLI, not the live DB.

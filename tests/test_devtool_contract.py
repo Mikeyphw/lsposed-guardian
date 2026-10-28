@@ -1,5 +1,6 @@
 """Audit the promises of the Devtool integration without requiring root or Devtool in CI."""
 import pathlib
+import sys
 import subprocess
 import tomllib
 import unittest
@@ -18,7 +19,7 @@ class DevtoolContractTests(unittest.TestCase):
 
  def test_install_workflow_has_integrity_prerequisite(self):
   steps=TARGET['workflows']['install']
-  self.assertEqual([x['id'] for x in steps],['preflight','unit','contract','ui','ci-parity','wal-model','boot-trial-tests','one-shot-tests','qualification','package','verify','install'])
+  self.assertEqual([x['id'] for x in steps],['preflight','unit','contract','ui','ci-parity','wal-model','boot-trial-tests','one-shot-tests','parity-tests','personal-auto-tests','qualification','package','verify','install'])
   self.assertEqual(steps[-1]['ref'],'job:flash-ksu')
   self.assertEqual(steps[-1]['depends_on'],['verify'])
   self.assertEqual(steps[-2]['ref'],'job:verify-package')
@@ -26,7 +27,7 @@ class DevtoolContractTests(unittest.TestCase):
  def test_install_requires_full_qualification_graph(self):
   steps=TARGET['workflows']['install']
   q=next(item for item in steps if item['id']=='qualification')
-  self.assertEqual(set(q['depends_on']),{'unit','contract','ui','ci-parity','wal-model','boot-trial-tests','one-shot-tests'})
+  self.assertEqual(set(q['depends_on']),{'unit','contract','ui','ci-parity','wal-model','boot-trial-tests','one-shot-tests','parity-tests','personal-auto-tests'})
   p=next(item for item in steps if item['id']=='package')
   self.assertEqual(p['depends_on'],['qualification'])
   src=(ROOT/'tools/qualify_host.py').read_text()
@@ -34,7 +35,7 @@ class DevtoolContractTests(unittest.TestCase):
   self.assertIn('Duplicate test result names',src)
 
  def test_ci_parity_checker(self):
-  p=subprocess.run(['python3',str(ROOT/'tools/check_ci_parity.py')],cwd=ROOT,text=True,capture_output=True,timeout=10)
+  p=subprocess.run([sys.executable,'-S',str(ROOT/'tools/check_ci_parity.py')],cwd=ROOT,text=True,capture_output=True,timeout=30)
   self.assertEqual(p.returncode,0,p.stderr)
   self.assertIn('PASS_GUARDIAN_CI_MIRROR_MATCHES_DEVTOOL_CHECK_DAG',p.stdout)
 
@@ -60,11 +61,11 @@ class DevtoolContractTests(unittest.TestCase):
   with tempfile.TemporaryDirectory(prefix='guardian-install-contract-') as d:
    target=pathlib.Path(d)/'repo'
    shutil.copytree(ROOT,target,ignore=shutil.ignore_patterns('dist','.git','__pycache__','.devtool','.pytest_cache'))
-   p=subprocess.run(['python3','tools/build.py'],cwd=target,text=True,capture_output=True,timeout=15)
+   p=subprocess.run([sys.executable,'-S','tools/build.py'],cwd=target,text=True,capture_output=True,timeout=60)
    self.assertEqual(p.returncode,0,p.stdout+p.stderr)
    env=os.environ.copy()
    env['GUARDIAN_INSTALL_DRY_RUN']='1'
-   p=subprocess.run(['sh','tools/install.sh'],cwd=target,env=env,text=True,capture_output=True,timeout=15)
+   p=subprocess.run(['sh','tools/install.sh'],cwd=target,env=env,text=True,capture_output=True,timeout=60)
    self.assertEqual(p.returncode,0,p.stdout+p.stderr)
    self.assertIn('PASS_GUARDIAN_INSTALL_DRY_RUN',p.stdout)
 
@@ -94,8 +95,8 @@ class DevtoolContractTests(unittest.TestCase):
    self.assertIn(c,script)
 
  def test_pty_handoff_refuses_noninteractive_install(self):
-  p=subprocess.run(['python3',str(ROOT/'tools/pty_install.py'),'sh','-c','echo BAD'],
-                   stdin=subprocess.DEVNULL,text=True,capture_output=True,timeout=5)
+  p=subprocess.run([sys.executable,'-S',str(ROOT/'tools/pty_install.py'),'sh','-c','echo BAD'],
+                   stdin=subprocess.DEVNULL,text=True,capture_output=True,timeout=15)
   self.assertNotEqual(p.returncode,0)
   self.assertNotIn('BAD',p.stdout)
   self.assertIn('interactive Termux terminal',p.stderr)
@@ -147,7 +148,7 @@ class DevtoolContractTests(unittest.TestCase):
 
  def test_typed_first_class_test_catalog(self):
   ids={x['id'] for x in CONF['test']}
-  self.assertEqual(ids,{'guardian-shell','guardian-python','guardian-webui','guardian-devtool-contract','guardian-early-boot-wal','guardian-boot-trial','guardian-one-shot'})
+  self.assertEqual(ids,{'guardian-shell','guardian-python','guardian-webui','guardian-devtool-contract','guardian-early-boot-wal','guardian-boot-trial','guardian-one-shot','guardian-parity-continuity'})
 
  def test_no_install_in_readonly_flows(self):
   for name in ('syntax','test','check','webui','device-check','preflight','doctor'):

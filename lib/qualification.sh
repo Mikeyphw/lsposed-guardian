@@ -85,7 +85,10 @@ qualification_report() {
   fi
   if qualification_boot_record; then echo 'boot_order_observation=PASS_RECORDED'; else echo 'boot_order_observation=NOT_VERIFIED'; fi
   if qualification_trial_record; then echo 'copy_only_boot_trial=PASS_RECORDED'; else echo 'copy_only_boot_trial=NOT_VERIFIED'; fi
-  echo 'automatic_quarantine=DISABLED'
+  echo 'offline_undo_in_custom_recovery=NOT_VERIFIED_BY_GUARDIAN'
+  echo 'power_loss_recovery=NOT_VERIFIED'
+  echo 'exclusive_db_access=NOT_VERIFIED'
+  echo "automatic_quarantine=$([ "$AUTO_QUARANTINE" = 1 ] && echo OPT_IN_ALLOWLISTED || echo DISABLED)" 
   echo 'qualification=UNQUALIFIED'
   echo 'reason=Manual acceptance receipts do not certify unattended recovery, power-loss safety or exclusive Vector database access'
 }

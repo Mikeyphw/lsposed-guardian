@@ -12,6 +12,10 @@ status=0
     printf 'exit_code=%s\n' "$rc"
     [ "$rc" -eq 0 ] || status=1
   done
+  printf '\n=== active / staged runtime parity ===\n'
+  python3 "$(dirname "$0")/runtime_parity.py" || status=1
+  printf '\n=== historical acceptance export ===\n'
+  python3 "$(dirname "$0")/acceptance_export.py" || status=1
 } > "$OUT" 2>&1
 cat "$OUT"
 if command -v termux-clipboard-set >/dev/null 2>&1 && termux-clipboard-set < "$OUT"; then

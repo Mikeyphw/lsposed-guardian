@@ -1,6 +1,7 @@
 #!/system/bin/sh
 MODDIR="${0%/*}"
 . "$MODDIR/lib/common.sh" || exit 0
+. "$MODDIR/lib/crash.sh" || exit 0
 . "$MODDIR/lib/boot-probe.sh" || exit 0
 . "$MODDIR/lib/boot-trial.sh" || exit 0
 . "$MODDIR/lib/one-shot.sh" || exit 0
@@ -57,6 +58,8 @@ write_atomic "$BOOT_DIR/last-success-id" "$ID"
 write_atomic "$BOOT_DIR/failures" 0
 rm -f "$BOOT_DIR/pending-id" "$BOOT_DIR/recovery-performed"
 log HEALTH 'Boot stable, consecutive-failure counter cleared'
+# Read-only history state attestation; failure never makes a healthy boot fail.
+crash_continuity_boot || log WARN 'Crash continuity boot checkpoint unavailable'
 bp_stable || :
 bt_stable || :
 os_stable || :

@@ -1,6 +1,6 @@
 id=lsposed_guardian
 name=LSPosed Guardian
-version=0.9.4
-versionCode=904
+version=0.10.0
+versionCode=1000
 author=Community prototype
-description=Guardian observe-only, manually gated one-shot Vector restoration acceptance, gated recovery labs.
+description=Guardian opt-in allowlisted crash response, non-SQLite bootloop safe mode, journaled manual restore, and passive monitoring.

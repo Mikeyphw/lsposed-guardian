@@ -11,6 +11,8 @@ MODDIR="${0%/*}"
 . "$MODDIR/lib/boot-trial.sh" || exit 1
 . "$MODDIR/lib/one-shot.sh" || exit 1
 . "$MODDIR/lib/policy.sh" || exit 1
+. "$MODDIR/lib/auto-quarantine.sh" || exit 1
+. "$MODDIR/lib/safe-mode.sh" || exit 1
 init_state || { echo 'Cannot initialize Guardian state (root required)' >&2; exit 1; }
 load_config
 
@@ -63,7 +65,17 @@ Usage: guardian.sh COMMAND [ARGS]
   rollback PKG --apply    Re-enable only a Guardian-quarantined module
   quarantine-reconcile PKG --apply  Resolve interrupted disable transaction
   rollback-reconcile PKG --apply  Resolve interrupted rollback transaction
-  arm               Enable recovery only after device qualification
+  auto-allow PKG --apply  Explicitly allowlist an eligible module for automatic quarantine
+  auto-deny PKG --apply   Remove a module from the automatic allowlist
+  auto-arm --apply       Enable conservative scoped crash response (allowlist required)
+  auto-disarm           Disable automatic quarantine immediately
+  auto-status           Show allowlist and last automatic action
+  auto-tick --apply      Run one guarded auto-quarantine evaluation now (no bypass)
+  auto-preview APP      Read-only auto-quarantine plan for an app process
+  safe-mode-arm --apply Enable no-DB-write bootloop fallback for next hardware boot
+  safe-mode-disarm      Disable bootloop fallback (does not re-enable Vector)
+  safe-mode-status      Show bootloop fallback and Vector marker
+  arm               Legacy unsafe auto SQLite restore retired (refused)
   disarm            Observe only; never automatically restore
   restore --apply   Queue known-good database restore for the NEXT hardware boot
   cancel-restore    Cancel a queued manual restore
@@ -73,7 +85,7 @@ Usage: guardian.sh COMMAND [ARGS]
   reset-failures    Reset the failed-boot counter and recovery latch
   help              Show help
 
-Automatic app-crash quarantining remains disabled in this release.
+Automatic quarantine and bootloop safe mode are opt-in and disabled on upgrade.
 Snapshots retain all Vector module data, scopes and preferences. Disable/enable
 changes apply to newly spawned processes; existing hooks may persist until restart.
 USAGE
@@ -89,6 +101,21 @@ set_auto() {
   mv -f "$TEMP" "$CFG" || return 1
   log CONFIG "Auto recovery set to $TARGET"
   echo "AUTO_RECOVERY=$TARGET"
+}
+
+personal_config_set() {
+  PCS_KEY="$1" PCS_VALUE="$2"
+  case "$PCS_KEY" in AUTO_QUARANTINE|AUTO_QUARANTINE_ALLOWLIST|AUTO_SAFE_MODE) : ;; *) return 1;; esac
+  case "$PCS_VALUE" in *[!a-zA-Z0-9_.,]*) return 1;; esac
+  PCS_TEMP="$CFG.personal.$$"
+  # Rewrite a known key or append it. No eval, no shell metacharacters.
+  if grep -q "^$PCS_KEY=" "$CFG"; then
+    sed "s/^$PCS_KEY=.*/$PCS_KEY=$PCS_VALUE/" "$CFG" > "$PCS_TEMP" || return 1
+  else
+    { cat "$CFG"; printf '%s=%s\n' "$PCS_KEY" "$PCS_VALUE"; } > "$PCS_TEMP" || return 1
+  fi
+  chmod 600 "$PCS_TEMP" || return 1
+  mv -f "$PCS_TEMP" "$CFG"
 }
 
 check_pkg() {
@@ -120,6 +147,8 @@ status() {
   echo "snapshot_validation=$(snapshot_integrity_level last-good)"
   echo "sqlite_verifier=$({ sqlite_tool >/dev/null && echo available; } || echo unavailable)"
   echo "device_restore_qualified=$RECOVERY_DEVICE_QUALIFIED"
+  echo "auto_quarantine=$AUTO_QUARANTINE"
+  echo "auto_safe_mode=$AUTO_SAFE_MODE"
   echo "baseline_policy=pinned"
   echo "baseline_boot=$(baseline_boot_label)"
   echo "baseline_provenance=$(baseline_provenance)"
@@ -200,7 +229,7 @@ case "${1:-help}" in
     H_RESULT="$(read_first "$HIST_DIR/last-result")"
     case "$H_RESULT" in ok|error|busy) : ;; *) H_RESULT=unknown ;; esac
     printf '"history_recent_poll":%s,"history_last_poll_result":"%s",' "$H_RECENT" "$H_RESULT"
-    printf '"quarantine_active":%s,"quarantine_pending":%s,"automatic_quarantine_enabled":false,"excluded_crash_packages":["com.openai.chatgpt"],' "$Q_ACTIVE" "$Q_PENDING"
+    printf '"quarantine_active":%s,"quarantine_pending":%s,"automatic_quarantine_enabled":%s,"excluded_crash_packages":["com.openai.chatgpt"],' "$Q_ACTIVE" "$Q_PENDING" "$([ "$AUTO_QUARANTINE" = 1 ] && echo true || echo false)"
     printf '"collector_recent_poll":%s,"collector_last_poll_epoch":%s,"collector_last_poll_result":"%s","collector_last_poll_reason":"%s","collector_last_failure_reason":%s,' "$MON_RECENT" "$MON_AT" "$MON_RESULT" "$MON_REASON" "$FAIL_REASON_JSON"
         # Metadata pre-dating v0.5 has no recorded origin boot; report null rather than inventing one.
     BASELINE_BOOT="$(read_first "$SNAP_DIR/last-good.boot-id")"
@@ -395,24 +424,63 @@ case "${1:-help}" in
     if [ "${2:-}" != '--apply' ]; then echo 'Explicit promote --apply required' >&2; exit 2; fi
     promote_snapshot || exit 1
     ;;
+  auto-allow|auto-deny)
+    [ "${3:-}" = --apply ] && [ -z "${4:-}" ] || { echo 'Explicit PKG --apply required' >&2; exit 2; }
+    ag_pkg_safe "${2:-}" || { echo 'Protected or invalid package' >&2; exit 2; }
+    AG_EDIT=''
+    OLDIFS="$IFS"; IFS=,
+    for AG_ENTRY in $AUTO_QUARANTINE_ALLOWLIST; do
+      [ -n "$AG_ENTRY" ] || continue
+      [ "$AG_ENTRY" != "$2" ] || continue
+      AG_EDIT="${AG_EDIT:+$AG_EDIT,}$AG_ENTRY"
+    done
+    IFS="$OLDIFS"
+    if [ "$1" = auto-allow ]; then AG_EDIT="${AG_EDIT:+$AG_EDIT,}$2"; fi
+    personal_config_set AUTO_QUARANTINE_ALLOWLIST "$AG_EDIT" || exit 1
+    echo "allowlist=$AG_EDIT" ;;
+  auto-arm)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || exit 2
+    [ -n "$AUTO_QUARANTINE_ALLOWLIST" ] && [ "$PASSIVE_CRASH_MONITOR" = 1 ] &&
+      [ "$HISTORY_MONITOR" = 1 ] && boot_complete &&
+      [ "$(read_first "$BOOT_DIR/last-success-id")" = "$(boot_id)" ] &&
+      monitor_recent_poll && history_recent_poll && vector status >/dev/null 2>&1 || {
+      echo 'Auto quarantine preflight not ready; arm refused' >&2; exit 1; }
+    OLDIFS="$IFS"; IFS=,
+    for AG_ENTRY in $AUTO_QUARANTINE_ALLOWLIST; do
+      if ! ag_pkg_safe "$AG_ENTRY"; then IFS="$OLDIFS"; exit 1; fi
+    done
+    IFS="$OLDIFS"
+    personal_config_set AUTO_QUARANTINE 1 || exit 1
+    echo 'AUTO_QUARANTINE=1; allowlist only, at most one action per boot, no reboot' ;;
+  auto-disarm)
+    personal_config_set AUTO_QUARANTINE 0 || exit 1
+    echo 'AUTO_QUARANTINE=0' ;;
+  auto-status) ag_status ;;
+  auto-tick)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || exit 2
+    ag_tick ;;
+  auto-preview)
+    check_pkg "${2:-}" || exit 2
+    if AG_CAND="$(ag_plan_app "$2")"; then echo "eligible_allowlisted_module=$AG_CAND"; else echo 'eligible_allowlisted_module=NONE'; fi
+    echo 'causality=NOT_ESTABLISHED; action=NONE' ;;
+  safe-mode-arm)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || exit 2
+    [ "$(read_first "$BOOT_DIR/last-success-id")" = "$(boot_id)" ] &&
+      boot_complete && [ ! -e "$BOOT_DIR/safe-mode-request" ] || exit 1
+    personal_config_set AUTO_SAFE_MODE 1 || exit 1
+    echo 'AUTO_SAFE_MODE=1; when boot threshold reached, Vector disable marker requested for next boot' ;;
+  safe-mode-disarm)
+    personal_config_set AUTO_SAFE_MODE 0 || exit 1
+    echo 'AUTO_SAFE_MODE=0; any existing Vector disable marker is preserved' ;;
+  safe-mode-status) sm_status ;;
   arm)
-    if ! recovery_baseline_ready; then
-      echo 'Cannot arm without a valid last-known-good snapshot. Boot normally or run snapshot.' >&2; exit 1
-    fi
-    if [ "$RECOVERY_DEVICE_QUALIFIED" != 1 ]; then
-      echo 'Offline recovery not device-qualified. Refusing to arm.' >&2; exit 1
-    fi
-    set_auto 1
+    echo 'Legacy unjournaled automatic SQLite restore retired. Use safe-mode-arm or manually staged one-shot.' >&2
+    exit 1
     ;;
   disarm) set_auto 0 ;;
   restore)
-    if [ "${2:-}" != '--apply' ]; then echo 'Explicit --apply required to queue restoration' >&2; exit 2; fi
-    [ "$RECOVERY_DEVICE_QUALIFIED" = 1 ] || { echo 'Device offline recovery unqualified; refusing restore queue' >&2; exit 1; }
-    recovery_baseline_ready || { echo 'No integrity-verified snapshot to restore' >&2; exit 1; }
-    write_atomic "$BOOT_DIR/manual-restore" 'queued' || exit 1
-    log REQUEST 'Manual last-known-good restore queued for next hardware boot'
-    echo 'Restore queued. Perform an ordinary hardware reboot when ready. No reboot triggered.'
-    ;;
+    echo 'Legacy queued offline restore retired; use verified one-shot-stage --apply instead.' >&2
+    exit 1 ;;
   cancel-restore) rm -f "$BOOT_DIR/manual-restore"; echo 'Queued restore cancelled' ;;
   reset-failures)
     write_atomic "$BOOT_DIR/failures" 0

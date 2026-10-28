@@ -65,3 +65,7 @@ This repository contains the consolidated repaired **Guardian 0.9.0** source (in
 ### Repository qualification gate (post-bootstrap hardening)
 
 The `./devtoolw install` workflow now runs the full test DAG and exact-evidence qualification before flashing. The public GitHub Actions jobs are a checked host-compatible mirror, not a substitute for native Devtool execution. Neither host acceptance nor isolated labs qualify early-boot restoration. See `docs/DEVTOOL_INTEGRATION_IMPROVEMENTS.md`.
+
+
+## Guardian v0.10.0 personal automation consolidation (2026-10-28)
+Source-bound v0.9.4 -> v0.10.0 integrates v0.9.5 staged/active KernelSU parity and crash-continuity receipts, explicit allowlist auto quarantine with reversible journal, and optional non-SQLite bootloop safe mode. Old unjournaled `offline_restore()` is permanently retired; automatic SQLite restoration is not qualified or enabled. See `docs/PERSONAL_AUTOMATION.md`. Open evidence: real Android opt-in behavior, offline undo in custom recovery, startup-race/power-loss interruption. Status: host implementation; native device acceptance pending.

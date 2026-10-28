@@ -2,6 +2,10 @@
 MODDIR="${0%/*}"
 . "$MODDIR/lib/common.sh" || exit 0
 . "$MODDIR/lib/crash.sh" || exit 0
+. "$MODDIR/lib/history.sh" || exit 0
+. "$MODDIR/lib/quarantine.sh" || exit 0
+. "$MODDIR/lib/one-shot.sh" || exit 0
+. "$MODDIR/lib/auto-quarantine.sh" || exit 0
 init_state || exit 0
 load_config
 [ "$PASSIVE_CRASH_MONITOR" = 1 ] || exit 0
@@ -14,6 +18,10 @@ mkdir -p "$MON_DIR" || exit 0
 chmod 700 "$MON_DIR" 2>/dev/null || :
 log MONITOR 'Read-only crash collector started'
 while [ "$(boot_id)" = "$MON_BOOT" ] && boot_complete; do
+  # CLI policy changes must take effect in the current boot. In particular,
+  # auto-disarm MUST stop automatic actions without requiring a reboot.
+  load_config
+  [ "$PASSIVE_CRASH_MONITOR" = 1 ] || break
   if crash_collect; then
     MON_RESULT=ok
   else
@@ -33,5 +41,6 @@ while [ "$(boot_id)" = "$MON_BOOT" ] && boot_complete; do
   write_atomic "$MON_DIR/last-result" "$MON_RESULT" || :
   write_atomic "$MON_DIR/last-reason" "$CR_CAPTURE_REASON" || :
   write_atomic "$MON_DIR/last-epoch" "$(date +%s)" || :
+  [ "$MON_RESULT" != ok ] || ag_tick || :
   sleep "$CRASH_POLL_SECONDS"
 done

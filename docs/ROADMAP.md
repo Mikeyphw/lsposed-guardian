@@ -202,3 +202,19 @@ Evidence received from the owner's **actual Android 13 / Vector 3112** environme
 - [ ] Run an offline custom recovery **undo** test of the retained original SQLite family (not the same as backup `status` PASS); only when separately authorized and with rescue path ready.
 - [ ] Qualify real interrupted-boot/power-loss behavior and startup exclusivity. A successful one-shot does not certify every failure boundary.
 - [ ] Automatic restore/quarantine still disabled; pinned `unknown_legacy` baseline remains `legacy_header_only`, and `RECOVERY_DEVICE_QUALIFIED=0`. No auto-promotion or arming.
+
+## v0.9.5 consolidated hardening — pending native-Termux acceptance (2026-10-28)
+
+- [x] **Source-bound build, not an installed hotfix.** The v0.9.4 repository source was reconstructed from the original Devtool R2 package and all seven chronological overlay hash transitions, with zero mismatched inputs. No user device state was imported into the source tree.
+- [x] **KernelSU installation activation parity.** `tools/runtime_parity.py`, fixed root digest helper, `devtoolw runtime-parity`: compare active module under `/data/adb/modules/lsposed_guardian` and pending `/data/adb/modules_update/lsposed_guardian` against eight canonical source files. Distinguish `ACTIVE_MATCH`, `STAGED_PENDING_REBOOT`, and unexpected drift. Never repair installed files automatically.
+- [x] **Install and read-only device acceptance.** `devtoolw install` records crash/restoration metadata before and after the KernelSU installer, then verifies active/staged hashes; `devtoolw device-check` includes parity and a machine-readable manual acceptance export. No boot script mutates Vector or changes the recovery gate for this work.
+- [x] **Forward-looking crash continuity.** Root-only `continuity.tsv` records every *changed* crash-file hash/count at the existing merge lock, and a boot checkpoint detects a change since the last checkpoint. Crash-audit reports `UNTRACKED_CHANGE` or an untracked-boot record without claiming a cause; earlier loss from 73 to 8/9 cannot be retroactively explained.
+- [x] **Manual qualification evidence.** `tools/acceptance_export.py` writes a local file with source digests, hashes of on-device receipt outputs, and historical manual success flags, while hard-setting `overall_automatic_recovery_qualified=false` and explicitly leaving power-loss/SQLite exclusivity/offline undo unverified. This is a snapshot of root-readable evidence, not trusted remote attestation.
+- [x] **Regression + CI parity.** A new isolated parity/continuity test job is mandatory in Devtool `test`/`check`/`install` and GitHub CI/release-candidate mirror. No live tests enter default checks.
+- [ ] **Native Termux acceptance:** Apply v0.9.5 source-checked update, pass all `devtoolw check`, install interactively, reboot, confirm `runtime-parity=ACTIVE_MATCH` and new continuity/evidence output.
+- [ ] **Remaining real safety gates:** independent custom-recovery offline undo and injected interruption + exclusive DB startup access, explicitly not qualified by a successful manual one-shot.
+- [ ] **Production automatic recovery:** continue disabled; `RECOVERY_DEVICE_QUALIFIED=0`, pinned legacy baseline unchanged, `com.openai.chatgpt` excluded.
+
+
+## Guardian v0.10.0 personal automation consolidation (2026-10-28)
+Source-bound v0.9.4 -> v0.10.0 integrates v0.9.5 staged/active KernelSU parity and crash-continuity receipts, explicit allowlist auto quarantine with reversible journal, and optional non-SQLite bootloop safe mode. Old unjournaled `offline_restore()` is permanently retired; automatic SQLite restoration is not qualified or enabled. See `docs/PERSONAL_AUTOMATION.md`. Open evidence: real Android opt-in behavior, offline undo in custom recovery, startup-race/power-loss interruption. Status: host implementation; native device acceptance pending.

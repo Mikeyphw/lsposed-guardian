@@ -3,6 +3,7 @@
 CRASH_DIR="$STATE_DIR/crashes"
 CRASH_FILE="$CRASH_DIR/events.tsv"
 CRASH_MAX_EVENTS=400
+CRASH_CONTINUITY="$CRASH_DIR/continuity.tsv"
 MON_DIR="$STATE_DIR/monitor"
 
 crash_init() {
@@ -35,6 +36,46 @@ crash_parse_file() {
   ' "$CP_RAW" > "$CP_OUT"
 }
 
+# Durable root-only metadata for future retention investigations. Pre-v0.9.5
+# reductions cannot be explained retroactively. A receipt records an observed
+# change, NOT its cause. The crash-event file remains the source of truth.
+crash_continuity_record() {
+  CC_KIND="$1" CC_BEFORE="$2" CC_OLDHASH="$3"
+  CC_AFTER="$(crash_count_all)"
+  CC_NEWHASH="$(db_sha "$CRASH_FILE")"
+  [ -n "$CC_NEWHASH" ] || return 1
+  [ "$CC_KIND" = BOOT ] || [ "$CC_OLDHASH" != "$CC_NEWHASH" ] || return 0
+  CC_EPOCH="$(date +%s)"
+  CC_BOOT="$(boot_id | tr -cd 'a-fA-F0-9-')"
+  # All fields are fixed labels or numeric/digest values; no process identities.
+  case "$CC_KIND" in MERGE|TRIM_OR_DEDUP|REBUILD|BOOT|UNTRACKED_AT_BOOT) : ;; *) return 1 ;; esac
+  if ! printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+     "$CC_EPOCH" "$CC_BOOT" "$CC_KIND" "$CC_BEFORE" "$CC_AFTER" \
+     "$CC_OLDHASH" "$CC_NEWHASH" >> "$CRASH_CONTINUITY"; then
+    return 1
+  fi
+  chmod 600 "$CRASH_CONTINUITY" 2>/dev/null || :
+}
+
+crash_continuity_boot() {
+  [ -f "$CRASH_FILE" ] || return 0
+  CC_PRIOR_COUNT="$(crash_count_all)"
+  CC_PRIOR_HASH="$(db_sha "$CRASH_FILE")"
+  CC_BOOT_KIND=BOOT
+  if [ -s "$CRASH_CONTINUITY" ]; then
+    CC_LAST_COUNT="$(tail -n 1 "$CRASH_CONTINUITY" | awk -F '\t' '{print $5}')"
+    CC_LAST_HASH="$(tail -n 1 "$CRASH_CONTINUITY" | awk -F '\t' '{print $7}')"
+    case "$CC_LAST_COUNT" in ''|*[!0-9]*) CC_LAST_COUNT=unknown ;; esac
+    if [ "$CC_LAST_HASH" != "$CC_PRIOR_HASH" ]; then
+      # Changed since last recorded checkpoint: flag, never invent a cause.
+      CC_BOOT_KIND=UNTRACKED_AT_BOOT
+      CC_PRIOR_COUNT="$CC_LAST_COUNT"
+      CC_PRIOR_HASH="$CC_LAST_HASH"
+    fi
+  fi
+  crash_continuity_record "$CC_BOOT_KIND" "$CC_PRIOR_COUNT" "$CC_PRIOR_HASH"
+}
+
 # This is the only history mutation: bounded, deduplicated atomic replace.
 crash_merge_file() {
   CM_NEW="$1"
@@ -42,6 +83,8 @@ crash_merge_file() {
   CM_UNIQUE="$CRASH_DIR/unique-$$.tsv"
   CM_SORTED="$CRASH_DIR/sorted-$$.tsv"
   CM_TMP="$CRASH_DIR/merge-$$.tsv"
+  CM_BEFORE="$(crash_count_all)"
+  CM_BEFORE_HASH="$(db_sha "$CRASH_FILE")"
   # Check every step separately: POSIX sh has no pipefail. Failed reads/writes
   # must NEVER replace existing crash evidence with partial or empty content.
   if ! cat "$CRASH_FILE" "$CM_NEW" > "$CM_JOIN" ||
@@ -54,6 +97,12 @@ crash_merge_file() {
   fi
   chmod 600 "$CRASH_FILE" 2>/dev/null || :
   rm -f "$CM_JOIN" "$CM_UNIQUE" "$CM_SORTED"
+  CM_AFTER="$(crash_count_all)"
+  CM_KIND=MERGE
+  [ "$CM_AFTER" -ge "$CM_BEFORE" ] || CM_KIND=TRIM_OR_DEDUP
+  if ! crash_continuity_record "$CM_KIND" "$CM_BEFORE" "$CM_BEFORE_HASH"; then
+    log WARN 'Crash continuity metadata unavailable; no continuity claim'
+  fi
   return 0
 }
 
@@ -180,6 +229,20 @@ crash_audit() {
   echo "history_bytes=$(db_bytes "$CRASH_FILE")"
   echo "history_owner=$(stat -c '%u:%g' "$CRASH_FILE" 2>/dev/null || echo unknown)"
   echo "history_mode=$(stat -c '%a' "$CRASH_FILE" 2>/dev/null || echo unknown)"
-  echo 'retention_delta=UNKNOWN_WITHOUT_PRIOR_FILE_OR_TRIM_RECEIPT'
+  if [ -s "$CRASH_CONTINUITY" ]; then
+    echo "continuity_records=$(wc -l < "$CRASH_CONTINUITY" | tr -d ' ')"
+    echo "continuity_last_record=$(tail -n 1 "$CRASH_CONTINUITY")"
+    LAST_HASH="$(tail -n 1 "$CRASH_CONTINUITY" | awk -F '\t' '{print $7}')"
+    if [ "$LAST_HASH" = "$(db_sha "$CRASH_FILE")" ]; then
+      echo 'continuity_current_digest=ATTESTED'
+    else
+      echo 'continuity_current_digest=UNTRACKED_CHANGE'
+    fi
+    echo "continuity_untracked_boot_changes=$(grep -c 'UNTRACKED_AT_BOOT' "$CRASH_CONTINUITY" 2>/dev/null || :)"
+    echo 'retention_delta=TRACKED_FROM_FIRST_V095_RECEIPT_ONLY'
+  else
+    echo 'continuity_current_digest=NO_RECEIPT'
+    echo 'retention_delta=UNKNOWN_WITHOUT_PRIOR_FILE_OR_TRIM_RECEIPT'
+  fi
   echo 'automatic_quarantine=DISABLED'
 }

@@ -14,7 +14,7 @@ INSTALL = [
  'module.prop','config.defaults','customize.sh','action.sh','guardian.sh',
  'post-fs-data.sh','service.sh','one-shot-offline-undo.sh','crash-monitor.sh','history-monitor.sh','selftest.sh','uninstall.sh',
  'lib/common.sh','lib/crash.sh','lib/history.sh','lib/quarantine.sh',
- 'lib/recovery-lab.sh','lib/quarantine-lab.sh','lib/qualification.sh','lib/policy.sh','lib/boot-probe.sh','lib/boot-trial.sh','lib/one-shot.sh',
+ 'lib/recovery-lab.sh','lib/quarantine-lab.sh','lib/qualification.sh','lib/policy.sh','lib/boot-probe.sh','lib/boot-trial.sh','lib/one-shot.sh','lib/auto-quarantine.sh','lib/safe-mode.sh',
  'webroot/index.html','webroot/main.css','webroot/main.js','README.md','docs/ROADMAP.md',
 ]
 EXECUTABLE={'customize.sh','action.sh','guardian.sh','post-fs-data.sh','service.sh','one-shot-offline-undo.sh',
@@ -61,7 +61,7 @@ if __name__=='__main__':
  source=make(source_paths(),OUT/f'LSPosed-Guardian-{version}-source.zip')
  result={'schema_version':1,'producer':'guardian-repo-builder','version':VERSION,
          'source_revision':os.environ.get('GITHUB_SHA','not-recorded'),
-         'device_restore_qualified':False,'automatic_quarantine_enabled':False,
+         'device_restore_qualified':False,'automatic_quarantine_enabled_by_default':False,
          'install':install,'source':source}
  (OUT/'build-evidence.json').write_text(json.dumps(result,indent=2)+'\n')
  print(json.dumps(result,indent=2))

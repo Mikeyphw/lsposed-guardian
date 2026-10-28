@@ -35,6 +35,10 @@ jobs:
         run: python3 -S -m unittest discover -s tests -p test_boot_trial.py -q
       - name: One-shot live-file fixture (isolated, never edits Android)
         run: python3 -S -m unittest discover -s tests -p test_one_shot.py -q
+      - name: Runtime parity and crash continuity fixtures (no root)
+        run: python3 -S -m unittest discover -s tests -p test_parity_continuity.py -q
+      - name: Personal automation safety fixtures (no device mutation)
+        run: python3 -S -m unittest discover -s tests -p test_personal_auto.py -q
       - name: Validate complete host-test evidence (Devtool DAG parity)
         run: python3 tools/qualify_host.py
       - name: Deterministic package

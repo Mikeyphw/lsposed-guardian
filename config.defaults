@@ -26,3 +26,12 @@ HISTORY_MONITOR=1
 HISTORY_POLL_SECONDS=180
 # Strict maximum age of a prior checkpoint used for crash correlation.
 HISTORY_MAX_AGE_SECONDS=240
+
+# PERSONAL-USE RESPONSE ENGINE: separately opt-in; never armed by upgrade.
+# Automatic quarantine only considers explicitly allowlisted modules after multiple
+# recent distinct-process crashes and verified historical scope evidence.
+AUTO_QUARANTINE=0
+AUTO_QUARANTINE_ALLOWLIST=
+AUTO_QUARANTINE_COOLDOWN_SECONDS=43200
+# Bootloop fallback: mark Vector disabled for the FOLLOWING boot (no DB edits).
+AUTO_SAFE_MODE=0

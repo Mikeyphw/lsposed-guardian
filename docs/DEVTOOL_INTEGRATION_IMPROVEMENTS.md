@@ -85,3 +85,25 @@ Finding: `early-boot-preflight` ran only after Android startup and cannot establ
 - **Affected:** Guardian `lib/crash.sh`, monitoring evidence, Devtool acceptance/debug reports.
 - **Remediation:** add nonmutating `crash-audit` with current byte count, checksum, permissions, and retained count; label historical delta `UNKNOWN` until old-file evidence is provided. Suggested future enhancement: source-bound monotonic file generation/versioned snapshots, retention trim event receipts, and cross-boot digest tracking to distinguish deletion/recreation from intended truncation.
 - **Status:** audit tool implemented, root-device cause still open. Do not attribute the count drop to Vector restoration without evidence.
+
+## GUARD-DT-013 — KernelSU staged module update misdiagnosed as runtime mismatch (v0.9.5)
+- **Evidence:** Operator observed `module.prop` reporting v0.9.4 while `one-shot-finalize`/`crash-audit` were unavailable. Without applying the proposed CLI hotfix, a subsequent hardware reboot activated those commands and finalized the historic restore. The previous stale-runtime conclusion was premature.
+- **Root cause/status:** KernelSU ordinarily stages updates under `/data/adb/modules_update` until reboot. Stage-vs-active evidence was not collected at the time; this is the leading explanation, not a proven specific state for that older boot.
+- **Fix:** read-only eight-file SHA-256 parity, explicit pending-reboot classification, fail-closed drift, Devtool `runtime-parity` and install/device-check integration, 100% fixture isolation. **Delivered in source, pending Android acceptance.** No file rewriting or hot activation.
+
+## GUARD-DT-014 — Crash-event count declined without continuity receipts
+- **Evidence:** Historical user-provided diagnostic counts 73 then 8/9, while retention cap is 400. No old file or earlier merge/rotation receipts were available to attribute cause.
+- **Fix:** root-only per-change `continuity.tsv`, boot-to-boot digest comparison, upgrade pre/post count+digest snapshots. Report detected unexplained changes rather than asserting deletion or intended trimming. The existing crash sample pipeline stays observational; no auto decisions. **Delivered in source, does not recover old records or prove power-loss durability.**
+
+## GUARD-DT-015 — Qualification reports scattered across operator logs
+- **Evidence:** Real manual quarantine, boot-order, copy-only rehearsal and one-shot restoration all achieved operator-reported acceptance; overall automatic recovery remains unqualified. Prior outputs risked overstating host-device correspondence.
+- **Fix:** local, source-bound machine JSON export of present on-device qualification and transaction receipt hash, root origin, no chat-crash attribution, explicit unverified power-loss/offline undo/exclusivity; integrated with `device-check` and recorded separately from hosted CI. **Delivered in source, pending on-device receipt.**
+
+## GUARD-DT-016 — PTY negative test Python startup timeout
+- **Evidence:** On the host, `test_pty_handoff_refuses_noninteractive_install` used ordinary Python startup with a 5-second subprocess deadline; the child could spend almost the whole budget importing `site` and failed under load although the installer itself rejected non-TTY input correctly.
+- **Fix:** Use `sys.executable -S` for isolated Python subprocess fixtures (PTY denial, CI parity checker, archive build) and ensure realistic 15–60 second timeouts even under competing host workloads. The installer itself uses `python3 -S` for its two stdlib-only Python helpers. Does not modify the interactive production installer, root policy, or the non-TTY denial.
+- **Status:** Delivered in v0.9.5; full native-Termux check still required.
+
+
+## Guardian v0.10.0 personal automation consolidation (2026-10-28)
+Source-bound v0.9.4 -> v0.10.0 integrates v0.9.5 staged/active KernelSU parity and crash-continuity receipts, explicit allowlist auto quarantine with reversible journal, and optional non-SQLite bootloop safe mode. Old unjournaled `offline_restore()` is permanently retired; automatic SQLite restoration is not qualified or enabled. See `docs/PERSONAL_AUTOMATION.md`. Open evidence: real Android opt-in behavior, offline undo in custom recovery, startup-race/power-loss interruption. Status: host implementation; native device acceptance pending.

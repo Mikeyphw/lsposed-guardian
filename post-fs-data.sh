@@ -4,6 +4,7 @@ MODDIR="${0%/*}"
 . "$MODDIR/lib/boot-probe.sh" || exit 0
 . "$MODDIR/lib/boot-trial.sh" || exit 0
 . "$MODDIR/lib/one-shot.sh" || exit 0
+. "$MODDIR/lib/safe-mode.sh" || exit 0
 init_state || exit 0
 load_config
 bp_early || :
@@ -28,23 +29,10 @@ write_atomic "$BOOT_DIR/failures" "$FAILURES" || exit 0
 write_atomic "$BOOT_DIR/current-id" "$ID" || exit 0
 write_atomic "$BOOT_DIR/pending-id" "$ID" || exit 0
 
-SNAP="$SNAP_DIR/last-good.db"
-if [ "$RECOVERY_DEVICE_QUALIFIED" != 1 ]; then
-  [ ! -f "$BOOT_DIR/manual-restore" ] || log WARN 'Manual restore queued but offline restore is not device-qualified; refusing'
-elif [ -f "$BOOT_DIR/manual-restore" ]; then
-  if offline_restore "$SNAP"; then
-    rm -f "$BOOT_DIR/manual-restore"
-    write_atomic "$BOOT_DIR/last-recovery-id" "$ID"
-    write_atomic "$BOOT_DIR/recovery-performed" 1
-  fi
-elif [ "$AUTO_RECOVERY" = 1 ] && [ "$FAILURES" -ge "$FAILURE_THRESHOLD" ]; then
-  if [ -f "$BOOT_DIR/recovery-performed" ]; then
-    log WARN 'Recovery already attempted this incident; no repeated mutation'
-  elif offline_restore "$SNAP"; then
-    write_atomic "$BOOT_DIR/recovery-performed" 1
-    write_atomic "$BOOT_DIR/last-recovery-id" "$ID"
-  else
-    log WARN 'Recovery declined or failed; state preserved'
-  fi
+# Retired legacy unjournaled auto SQLite restore: never call offline_restore.
+# Bootloop response is an opt-in KernelSU safe-mode marker only.
+sm_early || :
+if [ -f "$BOOT_DIR/manual-restore" ]; then
+  log WARN 'Legacy manual restore queue ignored; use guarded one-shot staging'
 fi
 exit 0

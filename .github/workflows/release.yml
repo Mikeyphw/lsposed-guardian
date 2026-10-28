@@ -31,6 +31,8 @@ jobs:
       - run: python3 tools/early_boot_transaction_lab.py
       - run: python3 -S -m unittest discover -s tests -p test_boot_trial.py -q
       - run: python3 -S -m unittest discover -s tests -p test_one_shot.py -q
+      - run: python3 -S -m unittest discover -s tests -p test_parity_continuity.py -q
+      - run: python3 -S -m unittest discover -s tests -p test_personal_auto.py -q
       - run: python3 tools/qualify_host.py
       - run: python3 tools/build.py
       - run: python3 tools/verify_build.py
