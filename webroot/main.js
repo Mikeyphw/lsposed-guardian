@@ -3,8 +3,8 @@
 // KernelSU exec's synchronous overload truncates output. Always use a named callback.
 const BASE='/data/adb/modules/lsposed_guardian/guardian.sh';
 const $=id=>document.getElementById(id);
-const READ_COMMANDS=new Set(['report','doctor','qualification','integrity','modules','history','history-changes','history-health','quarantine-status','quarantine-ledger','crash-audit','automatic-status','triage','collector-health','collect','notifications-status']);
-const WRITE_COMMANDS=new Set(['automatic-on --apply','automatic-off','safe-mode-arm --apply','safe-mode-disarm','notifications-on --apply','notifications-off','notifications-test --apply']);
+const READ_COMMANDS=new Set(['report','doctor','qualification','integrity','modules','history','history-changes','history-health','quarantine-status','quarantine-ledger','crash-audit','automatic-status','triage','collector-health','collect','notifications-status','softlock-status','softlock-probe','softlock-events']);
+const WRITE_COMMANDS=new Set(['automatic-on --apply','automatic-off','safe-mode-arm --apply','safe-mode-disarm','notifications-on --apply','notifications-off','notifications-test --apply','softlock-on --apply','softlock-off']);
 const COOLDOWNS=new Set(['3600','10800','21600','43200','86400','172800','604800']);
 const MODULE_LINE=/^\s*([A-Za-z0-9_.-]+)\s+(\d+)\s+(enabled|disabled)\s*$/i;
 const PKG_RE=/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+$/;
@@ -113,10 +113,15 @@ function parseLedger(raw){
 }
 function renderActivity(){
  const root=$('events-list'),recent=$('recent-activity');clear(root);clear(recent);
- const r=state.report||{},h=state.kv['history-health']||{},a=state.kv['automatic-status']||{};
+ const r=state.report||{},h=state.kv['history-health']||{},a=state.kv['automatic-status']||{},sl=state.kv['softlock-status']||{};
  const events=[['Vector and Guardian',r.boot_id&&r.last_stable_boot_id===r.boot_id?'Current boot verified stable':'Current boot not verified stable','◇',r.boot_id&&r.last_stable_boot_id===r.boot_id?'good':'warn'],
  ['Crash collector',r.collector_recent_poll===true?'Current-boot background poll healthy':`Background poll not verified · ${r.collector_last_poll_reason||'unknown'}`,r.collector_recent_poll===true?'✓':'!',''+(r.collector_recent_poll===true?'good':'warn')],
- ['Historical scope sampling',r.history_recent_poll===true?'Current-boot background poll healthy':`Background poll not verified · ${h.history_last_failure_reason||h.history_last_poll_result||'unknown'}`,r.history_recent_poll===true?'✓':'!',''+(r.history_recent_poll===true?'good':'warn')]];
+ ['Historical scope sampling',r.history_recent_poll===true?'Current-boot background poll healthy':`Background poll not verified · ${h.history_last_failure_reason||h.history_last_poll_result||'unknown'}`,r.history_recent_poll===true?'✓':'!',''+(r.history_recent_poll===true?'good':'warn')],
+ ['Post-boot soft lock',`Current boot: ${sl.softlock_decision||'unavailable'} · ${sl.softlock_reason||'no details'}`,sl.softlock_decision==='confirmed'?'!':'◷',sl.softlock_decision==='confirmed'?'bad':sl.softlock_decision==='clear'?'good':'warn']];
+ for(const line of String(state.raw['softlock-events']||'').split(/\r?\n/).slice(-8)){
+  const m=/^(\d{9,12})\t([a-fA-F0-9-]+)\t(clear|confirmed|unverified|disabled)\t([a-z_]+)$/.exec(line);
+  if(m)events.push(['Soft-lock '+m[3],`${when(m[1])} · ${m[4].replaceAll('_',' ')} · boot ${m[2].slice(0,8)}`,'◷',m[3]==='confirmed'?'bad':m[3]==='clear'?'good':'warn']);
+ }
  const ledger=parseLedger(state.raw['quarantine-ledger']);
  const qroot=$('quarantine-records');clear(qroot);
  if(ledger.length){for(const entry of ledger){
@@ -137,6 +142,8 @@ function renderActivity(){
  const hfail=h.history_last_failure_reason||h.history_last_poll_result||'unknown';
  fields('sampler-fields',[['Current-boot background poll',r.history_recent_poll===true?'Healthy':'Unavailable / stale'],['Background last attempt',when(h.history_last_poll_epoch)],['Background last result',h.history_last_poll_result||'Unknown'],['Background failure stage',hfail],['Affected module',h.history_last_failure_module||'Not recorded'],['Last background success',when(h.history_last_background_success_epoch)],['Last manual or background capture',when(h.history_last_success_epoch)],['Last capture result',h.history_manual_or_background_capture_reason||'Not recorded']]);
  const warnings=[];
+ if(sl.softlock_decision==='confirmed')warnings.push('Persistent boot-progress window confirmed; boot cannot be qualified and may require safe recovery.');
+ if(sl.softlock_decision==='unverified')warnings.push('Boot-progress detection is unverified on this ROM; no automatic action will be inferred from it.');
  if(r.history_recent_poll!==true)warnings.push(`Scope sampler needs attention (${hfail}). Automatic crash decisions require verified recent scopes.`);
  if(r.collector_recent_poll!==true)warnings.push('Crash collector heartbeat is not current.');
  if(r.vector_cli_available!==true)warnings.push('Vector CLI unavailable.');
@@ -147,7 +154,7 @@ function renderActivity(){
  renderSamples();
 }
 function renderProtection(){
- const r=state.report||{},a=state.kv['automatic-status']||{};
+ const r=state.report||{},a=state.kv['automatic-status']||{},sl=state.kv['softlock-status']||{};
  const policyKnown=state.lastRefreshOk&&!state.raw['automatic-status']?.startsWith('Unavailable:')&&/^[01]$/.test(a.auto_quarantine||'')&&/^[01]$/.test(a.safe_mode_armed||'');
  const stable=!!r.boot_id&&r.boot_id===r.last_stable_boot_id;
  const collectorHealthy=r.collector_recent_poll===true&&state.raw['collector-health']&&!state.raw['collector-health'].startsWith('Unavailable:');
@@ -158,6 +165,17 @@ function renderProtection(){
  const crashLabel=!policyKnown?'Unavailable':on?(ready?'Armed · evidence healthy':'Armed · action blocked until ready'):'Disabled';
  const bootOwner=a.safe_mode_owner==='ASHREXCUE_DEFERRED';
  const bootLabel=!policyKnown?'Unavailable':sm?(bootOwner?'Armed · deferred to AshReXcue':reboot?'Armed · watchdog on':'Armed · no watchdog'):'Disabled';
+ const softKnown=state.lastRefreshOk&&!state.raw['softlock-status']?.startsWith('Unavailable:')&&/^[01]$/.test(sl.softlock_enabled||'');
+ const softOn=softKnown&&sl.softlock_enabled==='1',softDecision=sl.softlock_decision||'unavailable';
+ const softBlocked=!sm||!reboot||bootOwner||!r.softlock_monitor_enabled;
+ const softLabel=!softKnown?'Unavailable':softOn?(softBlocked?'Armed · fallback unavailable':softDecision==='confirmed'?'Incident confirmed':softDecision==='clear'?'Armed · last boot check clear':'Armed · '+softDecision.replaceAll('_',' ')):'Disabled · detection only';
+ text('softlock-protection',softLabel);text('softlock-state',!softKnown?'Unavailable':softOn?'Armed':'Off');
+ statusClass($('softlock-protection'),softDecision==='confirmed'?'bad':!softKnown||softBlocked&&softOn?'warn':softOn?'good':null);
+ $('softlock-on').disabled=!softKnown||softOn||sl.softlock_monitor!=='1'||bootOwner||!stable||state.writing||state.refreshing;
+ $('softlock-off').disabled=!softKnown||!softOn||state.writing||state.refreshing;
+ $('softlock-probe').disabled=state.writing||state.refreshing;
+ fields('softlock-details',[['Current boot decision',softDecision.replaceAll('_',' ')],['Evidence',sl.softlock_reason||'Not recorded'],['Detection',sl.softlock_monitor==='1'?'Enabled':'Disabled / unavailable'],['Grace period',sl.softlock_grace_seconds?sl.softlock_grace_seconds+' seconds':'Unknown'],['Last observation',when(sl.softlock_last_epoch)],['Rescue attempted',sl.softlock_recovery_attempt||'No recorded attempt'],['Automatic action',softOn?(softBlocked?'Blocked by fallback policy':'Armed for next boot'):'Disabled']]);
+ text('softlock-raw',state.raw['softlock-status']||'Unavailable');
  text('crash-protection',crashLabel);statusClass($('crash-protection'),!policyKnown?'warn':on?(ready?'good':'warn'):null);
  text('boot-protection',bootLabel);statusClass($('boot-protection'),!policyKnown?'warn':sm&&bootOwner?'warn':sm?'good':null);
  text('auto-state',!policyKnown?'Unavailable':on?'Armed':'Off');statusClass($('auto-state'),!policyKnown?'warn':on?(ready?'good':'warn'):null);
@@ -186,7 +204,8 @@ function renderProtection(){
  }}else add(list,'p','Exclusion list unavailable until root policy is verified.','empty');
  fields('safeguard-summary',[['Module selection',a.policy==='all_scoped'?'All uniquely eligible scoped modules':a.policy==='allowlist'?'Explicit module allowlist':'Unavailable'],['One attempt per boot','Enforced by on-device transaction ledger'],['Minimum cooldown',policyKnown?Math.round(Number(a.cooldown_seconds)/3600)+' hours':'Unknown'],['Mandatory exclusion','com.openai.chatgpt']]);
  fields('policy-details',[['Policy',policyKnown?a.policy||'Unknown':'Unavailable'],['Crash action per boot','At most one attempt'],['Cooldown',policyKnown?`${Math.round(Number(a.cooldown_seconds)/3600)} hours`:'Unknown'],['Last action',when(a.last_action_epoch)],['Last module',a.last_action_module||'None'],['Boot watchdog',!policyKnown?'Unknown':reboot?'Armed':'Off'],['Safe-mode owner',a.safe_mode_owner||'Unknown'],['Vector disable marker',a.vector_disable_marker||'Unknown'],['Database auto-restore','Disabled']]);
- if(!state.lastRefreshOk)text('overall','Device status unavailable');
+ if(softDecision==='confirmed')text('overall','Post-boot soft lock detected');
+ else if(!state.lastRefreshOk)text('overall','Device status unavailable');
  else if(!vectorReady)text('overall','Vector unavailable');
  else if(!collectorHealthy&&!samplerHealthy)text('overall','Monitoring needs attention');
  else if(!samplerHealthy)text('overall','Scope monitoring needs attention');
@@ -197,7 +216,7 @@ function renderProtection(){
 }
 async function refresh(){if(state.refreshing||state.writing)return;state.refreshing=true;$('refresh').disabled=true;text('message','Refreshing device state…');const request=++state.seq;
  try{const report=JSON.parse(await command('report'));if(!report||report.producer!=='lsposed-guardian')throw new Error('Unexpected diagnostic producer');state.report=report;state.lastRefreshOk=true;text('version',`v${report.version||'?'}`);
-  const jobs=['automatic-status','history-health','collector-health','notifications-status','modules','qualification','integrity','doctor','history','history-changes','quarantine-status','quarantine-ledger','crash-audit'];
+  const jobs=['automatic-status','softlock-status','softlock-events','history-health','collector-health','notifications-status','modules','qualification','integrity','doctor','history','history-changes','quarantine-status','quarantine-ledger','crash-audit'];
   const settled=await Promise.allSettled(jobs.map(cmd=>command(cmd)));if(request!==state.seq)return;let errors=[];
   settled.forEach((s,i)=>{const key=jobs[i];if(s.status==='fulfilled'){state.raw[key]=s.value;state.kv[key]=kv(s.value)}else{state.raw[key]=`Unavailable: ${errorText(s.reason)}`;state.kv[key]={};errors.push(key)}});
   try{state.modules=parseModules(state.raw.modules);state.loaded=true;state.expectedEnabled=Number(state.raw.doctor.match(/Enabled Modules:\s*(\d+)/i)?.[1]??NaN);if(!Number.isFinite(state.expectedEnabled))state.expectedEnabled=null}catch(e){state.loaded=false;state.modules=[];text('modulewarning',state.raw.modules?.startsWith('Unavailable:')?state.raw.modules:errorText(e))}
@@ -224,13 +243,13 @@ async function analyze(){const target=$('target').value.trim();if(!safeTarget(ta
 async function modify(args,heading,warning){
  if(state.writing||state.refreshing)return;
  if(typeof window.confirm!=='function'||!window.confirm(`${heading}\n\n${warning}`))return;
- state.writing=true;for(const id of ['arm','disarm','safe-arm','safe-disarm','save-cooldown','add-exclusion','notifications-on','notifications-off','notifications-test'])$(id).disabled=true;
+ state.writing=true;for(const id of ['arm','disarm','safe-arm','safe-disarm','softlock-on','softlock-off','softlock-probe','save-cooldown','add-exclusion','notifications-on','notifications-off','notifications-test'])$(id).disabled=true;
  text('message',`Applying: ${heading}…`);
  try{const result=await command(args);state.lastActionNotice=`${heading}: command returned ${result.trim().split(/\r?\n/)[0]||'success'}. Effective policy refreshed below.`}
  catch(e){state.lastActionNotice=`${heading} failed: ${errorText(e)}. Check effective policy.`}
  finally{state.writing=false;await refresh()}
 }
-function copyDiagnostics(){const payload=JSON.stringify({report:state.report,qualification:state.raw.qualification,integrity:state.raw.integrity,automatic_policy:state.raw['automatic-status'],history_health:state.raw['history-health'],crash_audit:state.raw['crash-audit']},null,2);if(navigator.clipboard?.writeText){navigator.clipboard.writeText(payload).then(()=>text('message','Diagnostics copied.'),()=>text('message','Clipboard denied; use technical details.'))}else{text('message','Clipboard unavailable in this WebView; use technical details.') }}
+function copyDiagnostics(){const payload=JSON.stringify({report:state.report,qualification:state.raw.qualification,integrity:state.raw.integrity,automatic_policy:state.raw['automatic-status'],softlock:state.raw['softlock-status'],softlock_events:state.raw['softlock-events'],history_health:state.raw['history-health'],crash_audit:state.raw['crash-audit']},null,2);if(navigator.clipboard?.writeText){navigator.clipboard.writeText(payload).then(()=>text('message','Diagnostics copied.'),()=>text('message','Clipboard denied; use technical details.'))}else{text('message','Clipboard unavailable in this WebView; use technical details.') }}
 function activityView(tab){const samples=tab==='samples';$('samples-pane').hidden=!samples;$('events-pane').hidden=samples;document.querySelectorAll('[data-activity]').forEach(b=>b.classList.toggle('selected',b.dataset.activity===tab))}
 document.querySelectorAll('.bottom-nav button').forEach(b=>b.addEventListener('click',()=>show(b.dataset.tab)));
 document.querySelectorAll('[data-navigate]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.navigate)));
@@ -240,6 +259,9 @@ $('view-sampler').addEventListener('click',()=>{show('activity');activityView('s
 $('refresh').addEventListener('click',refresh);$('modulesearch').addEventListener('input',renderModules);$('modulefilter').addEventListener('change',renderModules);$('close-scopes').addEventListener('click',()=>{$('module-details').hidden=true});$('analyze').addEventListener('click',analyze);
 $('arm').addEventListener('click',()=>modify('automatic-on --apply','Enable automatic protection','Guardian may disable a uniquely eligible module and may request a bounded emergency bootloop fallback. Modules disabled previously are not automatically restored.'));
 $('disarm').addEventListener('click',()=>modify('automatic-off','Disarm all automatic actions','Future automatic responses will stop. Existing quarantine journals and safe-mode disable markers remain.'));
+$('softlock-on').addEventListener('click',()=>modify('softlock-on --apply','Enable post-boot rescue','This independently arms a bounded Vector fallback and watchdog without enabling crash quarantine. After persistent boot-progress evidence, Guardian may mark Vector disabled for the next boot and reboot once. The ROM must pass a read-only window compatibility probe.'));
+$('softlock-off').addEventListener('click',()=>modify('softlock-off','Disarm post-boot rescue','Detection remains read-only. Existing Vector disable markers and past recovery records will not be changed.'));
+$('softlock-probe').addEventListener('click',async()=>{if(state.writing||state.refreshing)return;state.writing=true;$('softlock-probe').disabled=true;try{const result=await command('softlock-probe');state.lastActionNotice='One-time read-only probe: '+result.trim()+'. This does not qualify a boot or arm recovery.'}catch(e){state.lastActionNotice='Soft-lock probe unavailable: '+errorText(e)}finally{state.writing=false;$('softlock-probe').disabled=false;await refresh()}});
 $('safe-arm').addEventListener('click',()=>modify('safe-mode-arm --apply','Enable bootloop fallback','If repeated boots fail, Guardian may disable the KernelSU Vector module on a later boot. AshReXcue owns boot protection when installed.'));
 $('safe-disarm').addEventListener('click',()=>modify('safe-mode-disarm','Disable bootloop fallback','This does not remove an already-created Vector disable marker.'));
 $('retry-sampler').addEventListener('click',async()=>{if(state.writing||state.refreshing)return;state.writing=true;$('retry-sampler').disabled=true;try{await command('history-capture');text('message','Read-only sample captured. The background polling heartbeat is independent.')}catch(e){text('message','Read-only capture failed: '+errorText(e))}finally{state.writing=false;$('retry-sampler').disabled=false;await refresh()}});

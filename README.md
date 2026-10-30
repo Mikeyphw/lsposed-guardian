@@ -1,3 +1,5 @@
+> **v0.12.2 post-boot soft-lock guard:** Guardian now recognizes a sustained visible Android boot-progress window after framework boot completion, with a separate opt-in, one-shot Vector rescue and WebUI control. [Scope, risks and device acceptance](docs/SOFTLOCK_V0122.md). Detection runs without enabling an automatic reboot.
+
 > **v0.12.1 audited WebUI hotfix:** One consolidated KernelSU WebUI redesign. See [docs/WEBUI_V012.md](docs/WEBUI_V012.md) for the protection dashboard, automatic controls, sampler diagnostics, modules, activity and rollback limitations. This update does **not** enable any automatic action during installation. See [the requirement-by-requirement audit](docs/WEBUI_V012_AUDIT.md) for delivered functions and device acceptance still open.
 
 # LSPosed Guardian v0.9.0 — consolidated isolated fault-lab and full-output WebUI

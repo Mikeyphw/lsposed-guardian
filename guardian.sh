@@ -13,6 +13,7 @@ MODDIR="${0%/*}"
 . "$MODDIR/lib/policy.sh" || exit 1
 . "$MODDIR/lib/auto-quarantine.sh" || exit 1
 . "$MODDIR/lib/safe-mode.sh" || exit 1
+. "$MODDIR/lib/softlock.sh" || exit 1
 init_state || { echo 'Cannot initialize Guardian state (root required)' >&2; exit 1; }
 load_config
 
@@ -74,6 +75,11 @@ Usage: guardian.sh COMMAND [ARGS]
   automatic-on --apply   Enable unattended scoped response + Vector bootloop fallback
   automatic-off         Stop new automatic actions without reboot
   automatic-status      Show automatic policy and bootloop state
+  softlock-status       Show current-boot softlock observation and rescue receipt
+  softlock-events       Show last 30 root-logged softlock decisions
+  softlock-probe        Read-only single boot-progress window probe
+  softlock-on --apply   Opt into post-boot rescue (arms bounded Vector fallback)
+  softlock-off          Stop future post-boot automatic rescue actions
   auto-disarm           Disable automatic quarantine immediately
   auto-status           Show allowlist and last automatic action
   auto-tick --apply      Run one guarded auto-quarantine evaluation now (no bypass)
@@ -118,7 +124,7 @@ set_auto() {
 
 personal_config_set() {
   PCS_KEY="$1" PCS_VALUE="$2"
-  case "$PCS_KEY" in AUTO_QUARANTINE|AUTO_QUARANTINE_ALLOWLIST|AUTO_QUARANTINE_POLICY|AUTO_SAFE_MODE|AUTO_BOOTLOOP_REBOOT|AUTO_QUARANTINE_COOLDOWN_SECONDS|CRASH_EXCLUDE_PACKAGES|ACTION_NOTIFICATIONS) : ;; *) return 1;; esac
+  case "$PCS_KEY" in AUTO_QUARANTINE|AUTO_QUARANTINE_ALLOWLIST|AUTO_QUARANTINE_POLICY|AUTO_SAFE_MODE|AUTO_BOOTLOOP_REBOOT|AUTO_QUARANTINE_COOLDOWN_SECONDS|CRASH_EXCLUDE_PACKAGES|ACTION_NOTIFICATIONS|AUTO_SOFTLOCK) : ;; *) return 1;; esac
   case "$PCS_VALUE" in *[!a-zA-Z0-9_.,]*) return 1;; esac
   PCS_TEMP="$CFG.personal.$$"
   # Rewrite a known key or append it. No eval, no shell metacharacters.
@@ -164,6 +170,7 @@ status() {
   echo "auto_safe_mode=$AUTO_SAFE_MODE"
   echo "auto_quarantine_policy=$AUTO_QUARANTINE_POLICY"
   echo "auto_bootloop_reboot=$AUTO_BOOTLOOP_REBOOT"
+  echo "auto_softlock=$AUTO_SOFTLOCK"
   echo "baseline_policy=pinned"
   echo "baseline_boot=$(baseline_boot_label)"
   echo "baseline_provenance=$(baseline_provenance)"
@@ -244,6 +251,10 @@ case "${1:-help}" in
     H_RESULT="$(read_first "$HIST_DIR/last-result")"
     case "$H_RESULT" in ok|error|busy) : ;; *) H_RESULT=unknown ;; esac
     printf '"history_recent_poll":%s,"history_last_poll_result":"%s",' "$H_RECENT" "$H_RESULT"
+    SL_STATE="$(read_first "$STATE_DIR/softlock/decision")"
+    [ "$(read_first "$STATE_DIR/softlock/boot-id")" = "$(boot_id)" ] || SL_STATE=not_observed_this_boot
+    case "$SL_STATE" in clear|confirmed|unverified|observing|disabled|not_observed_this_boot) : ;; *) SL_STATE=not_observed_this_boot ;; esac
+    printf '"softlock_monitor_enabled":%s,"softlock_rescue_armed":%s,"softlock_state":"%s",' "$([ "$SOFTLOCK_MONITOR" = 1 ] && echo true || echo false)" "$([ "$AUTO_SOFTLOCK" = 1 ] && echo true || echo false)" "$SL_STATE"
     printf '"quarantine_active":%s,"quarantine_pending":%s,"automatic_quarantine_enabled":%s,"excluded_crash_packages":["com.openai.chatgpt"],' "$Q_ACTIVE" "$Q_PENDING" "$([ "$AUTO_QUARANTINE" = 1 ] && echo true || echo false)"
     printf '"collector_recent_poll":%s,"collector_last_poll_epoch":%s,"collector_last_poll_result":"%s","collector_last_poll_reason":"%s","collector_last_failure_reason":%s,' "$MON_RECENT" "$MON_AT" "$MON_RESULT" "$MON_REASON" "$FAIL_REASON_JSON"
         # Metadata pre-dating v0.5 has no recorded origin boot; report null rather than inventing one.
@@ -490,6 +501,7 @@ case "${1:-help}" in
     personal_config_set AUTO_QUARANTINE 0 || exit 1
     personal_config_set AUTO_SAFE_MODE 0 || exit 1
     personal_config_set AUTO_BOOTLOOP_REBOOT 0 || exit 1
+    personal_config_set AUTO_SOFTLOCK 0 || exit 1
     echo 'PASS_GUARDIAN_AUTOMATIC_MODE_DISARMED'
     echo 'existing_quarantines_and_disable_markers_preserved=true'
     ;;
@@ -497,6 +509,7 @@ case "${1:-help}" in
     ag_status
     sm_status
     echo "auto_bootloop_reboot=$AUTO_BOOTLOOP_REBOOT"
+    echo "auto_softlock=$AUTO_SOFTLOCK"
     echo "crash_exclude_packages=$CRASH_EXCLUDE_PACKAGES"
     echo "collector_monitor_enabled=$PASSIVE_CRASH_MONITOR"
     echo "history_monitor_enabled=$HISTORY_MONITOR"
@@ -505,6 +518,40 @@ case "${1:-help}" in
     echo "notifications_enabled=$ACTION_NOTIFICATIONS"
     echo 'legacy_unjournaled_sqlite_restore=DISABLED'
     ;;
+  softlock-status) sl_status ;;
+  softlock-events)
+    if [ -s "$STATE_DIR/softlock/events.tsv" ]; then tail -n 30 "$STATE_DIR/softlock/events.tsv"; else echo "No softlock events recorded"; fi ;;
+  softlock-probe)
+    if sl_probe; then echo 'softlock_probe=visible_boot_progress';
+    else SL_PROBE_RC=$?; if [ "$SL_PROBE_RC" = 1 ]; then echo 'softlock_probe=no_boot_progress_window'; else echo 'softlock_probe=unverified'; fi; fi ;;
+  softlock-on)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || { echo 'softlock-on requires --apply' >&2; exit 2; }
+    # Independent from crash collector and historical scope sampler. This
+    # explicit action also arms only the bounded fallback it requires.
+    [ "$SOFTLOCK_MONITOR" = 1 ] && [ "$AUTO_RECOVERY" = 0 ] &&
+      boot_complete && [ "$(read_first "$BOOT_DIR/last-success-id")" = "$(boot_id)" ] &&
+      [ "$(read_first "$STATE_DIR/softlock/decision")" != confirmed ] &&
+      [ ! -e "$STATE_DIR/softlock/recovery-attempt" ] &&
+      [ ! -e "$BOOT_DIR/manual-restore" ] && [ ! -e "$OS_REQ" ] &&
+      vector status >/dev/null 2>&1 || {
+        echo 'Refusing softlock rescue: stable boot and Vector required, or a restore/recovery is pending' >&2; exit 1;
+      }
+    if [ -d /data/adb/modules/AshLooper ] || [ -d /data/adb/modules/ashrexcue ]; then
+      echo 'Refusing Guardian softlock rescue: AshReXcue owns boot protection' >&2; exit 1
+    fi
+    if sl_probe; then
+      echo 'Refusing softlock rescue: boot-progress window is visible now' >&2; exit 1
+    else
+      SL_PROBE_RC=$?
+      [ "$SL_PROBE_RC" -eq 1 ] || { echo 'Refusing softlock rescue: this ROM has not exposed a verifiable window inventory' >&2; exit 1; }
+    fi
+    personal_config_set AUTO_SAFE_MODE 1 || exit 1
+    personal_config_set AUTO_BOOTLOOP_REBOOT 1 || exit 1
+    personal_config_set AUTO_SOFTLOCK 1 || exit 1
+    echo 'PASS_GUARDIAN_SOFTLOCK_ARMED; bounded Vector fallback and watchdog armed, crash policy unchanged' ;;
+  softlock-off)
+    personal_config_set AUTO_SOFTLOCK 0 || exit 1
+    echo 'PASS_GUARDIAN_SOFTLOCK_DISARMED; disable markers unchanged' ;;
   auto-allow|auto-deny)
     [ "${3:-}" = --apply ] && [ -z "${4:-}" ] || { echo 'Explicit PKG --apply required' >&2; exit 2; }
     ag_pkg_safe "${2:-}" || { echo 'Protected or invalid package' >&2; exit 2; }
@@ -551,6 +598,7 @@ case "${1:-help}" in
     personal_config_set AUTO_SAFE_MODE 1 || exit 1
     echo 'AUTO_SAFE_MODE=1; when boot threshold reached, Vector disable marker requested for next boot' ;;
   safe-mode-disarm)
+    personal_config_set AUTO_SOFTLOCK 0 || exit 1
     personal_config_set AUTO_SAFE_MODE 0 || exit 1
     echo 'AUTO_SAFE_MODE=0; any existing Vector disable marker is preserved' ;;
   safe-mode-status) sm_status ;;

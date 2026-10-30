@@ -263,3 +263,18 @@ Source-bound v0.9.4 -> v0.10.0 integrates v0.9.5 staged/active KernelSU parity a
 - [ ] Obtain actual recovery-trigger incident receipt, proof of rollback and on-device notification delivery before marking fully complete.
 
 See `docs/WEBUI_V012_AUDIT.md` for a promise-by-promise status table. This correction is source-bound and does not arm automatic actions during an upgrade.
+
+
+## v0.12.2 post-boot soft-lock protection (2026-10-30)
+
+- [x] Retain previous root-based v0.12.1 WebUI, Vector, and quarantine changes; introduce post-boot softlock detection before clearing healthy-boot pending state.
+- [x] Bound WindowManager read-only polling and require persistent explicit TYPE_BOOT_PROGRESS visibility; never infer from credential lock state.
+- [x] Distinguish `clear`, `confirmed`, and `unverified` observations with current boot receipts.
+- [x] Add an independently armed bounded Vector marker-and-reboot rescue with post-write verification and one-shot latch; preserve AshReXcue ownership.
+- [x] Add emergency disarm, WebUI status, root-backed policy actions independent of crash/sampler health, and event receipts.
+- [x] Add host-unit tests, syntax and Devtool-compatibility checks and source-hash-bound overlay.
+- [ ] Run real-device ROM compatibility check (`softlock-probe`) and collect an actual stuck-screen event.
+- [ ] Qualify unattended Vector disable / rescue reboot on a disposable test device and confirm recovery from the correct window class.
+- [ ] Consider OEM-specific loading screens only with verified independent evidence; do not use locked-user state alone.
+
+Details: [SOFTLOCK_V0122.md](SOFTLOCK_V0122.md).

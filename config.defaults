@@ -44,3 +44,10 @@ AUTO_BOOTLOOP_REBOOT=0
 # Optional best-effort Android shell notification transport for Guardian actions.
 # Disabled until explicitly enabled and device-side delivery is verified.
 ACTION_NOTIFICATIONS=0
+
+# POST-BOOT SOFTLOCK: read-only detection by default. An absent user unlock,
+# lockscreen, or HOME activity NEVER triggers automated reboot.
+SOFTLOCK_MONITOR=1
+SOFTLOCK_GRACE_SECONDS=180
+# Requires separate explicit opt-in, safe-mode and bootloop watchdog policy.
+AUTO_SOFTLOCK=0

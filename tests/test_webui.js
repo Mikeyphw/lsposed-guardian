@@ -19,9 +19,13 @@ function element(id=''){
  return e;
 }
 const inventory=[...Array.from({length:8},(_,i)=>`mod.enabled${i+1}  ${10000+i} enabled`),...Array.from({length:12},(_,i)=>`mod.disabled${i+1} ${10100+i} disabled`)].join('\n');
-const report={producer:'lsposed-guardian',version:'0.12.1',boot_id:'aa-bb',last_stable_boot_id:'aa-bb',vector_cli_available:true,historical_checkpoints:56,stored_crash_events:8,history_recent_poll:false,collector_recent_poll:true,quarantine_active:0,quarantine_pending:0,automatic_quarantine_enabled:false,snapshot_validation:'legacy_header_only',qualification:'UNQUALIFIED'};
+const report={producer:'lsposed-guardian',version:'0.12.2',boot_id:'aa-bb',last_stable_boot_id:'aa-bb',vector_cli_available:true,historical_checkpoints:56,stored_crash_events:8,history_recent_poll:false,collector_recent_poll:true,quarantine_active:0,quarantine_pending:0,automatic_quarantine_enabled:false,snapshot_validation:'legacy_header_only',qualification:'UNQUALIFIED'};
 const outputs={report:JSON.stringify(report),modules:`PACKAGE UID STATUS\n--------------------\n${inventory}`,
  doctor:'Boot stable\nEnabled Modules: 8\n',qualification:'qualification=UNQUALIFIED\nactual_early_boot_restore_test=PASS_MANUAL_ONE_SHOT_RECEIPT',integrity:'baseline=legacy_header_only\n',
+ 'softlock-status':'softlock_enabled=0\nsoftlock_monitor=1\nsoftlock_grace_seconds=180\nsoftlock_decision=clear\nsoftlock_reason=boot_progress_absent_twice\nsoftlock_last_epoch=1793369477\n',
+ 'softlock-probe':'softlock_probe=no_boot_progress_window',
+ 'softlock-on --apply':'PASS_GUARDIAN_SOFTLOCK_ARMED',
+ 'softlock-off':'PASS_GUARDIAN_SOFTLOCK_DISARMED',
  'automatic-status':'auto_quarantine=0\nsafe_mode_armed=0\nauto_bootloop_reboot=0\nsafe_mode_owner=ASHREXCUE_DEFERRED\ncooldown_seconds=43200\ncrash_exclude_packages=com.openai.chatgpt,org.example.excluded\nhistory_monitor_enabled=1\npolicy=all_scoped\n',
  'history-changes':'interval_start_epoch=1793284661\ninterval_end_epoch=1793284800\nobservation_changes=NONE\n',
  'history-health':'history_recent_poll=no\nhistory_last_poll_result=error\nhistory_last_poll_epoch=1793369477\nhistory_last_failure_reason=vector_scope_unavailable\nhistory_last_failure_module=mod.enabled3\n',
@@ -71,6 +75,10 @@ async function exercise(bridge,allowConfirmation=true){
  assert.match(t.map.attention.textContent,/vector_scope_unavailable/);
  assert.match(t.map['sampler-fields'].children[0].children[1].textContent,/Unavailable/);
  assert.equal(t.map['crash-protection'].textContent,'Disabled');
+ assert.equal(t.map['softlock-protection'].textContent,'Disabled · detection only');
+ assert.equal(t.map['softlock-on'].disabled,true,'must arm fallback before softlock rescue');
+ assert.equal(t.calls.some(c=>c.endsWith('softlock-on --apply')),false,'no silent softlock arming');
+ t.map['softlock-probe'].listeners.click();await delay();await delay();assert.ok(t.calls.some(c=>c.endsWith('softlock-probe')),'read-only diagnostic can be invoked');
  assert.equal(t.calls.some(c=>c.includes('automatic-on --apply')),false,'no auto arming on load');
  assert.equal(t.map.modulelist.children.length,20,'20 compact module rows');
  t.map.modulesearch.value='enabled1';t.map.modulesearch.listeners.input();assert.equal(t.map.modulelist.children.length,1);

@@ -146,3 +146,12 @@ Source-bound v0.9.4 -> v0.10.0 integrates v0.9.5 staged/active KernelSU parity a
 - **Evidence:** original `personal_config_set` allowed only fixed automatic switches; adding unrestricted UI shell argument interpolation would permit untrusted package or numeric input.
 - **Fix:** strictly validated package names, safe bounded exclusion lists, protected mandatory exclusion, enumerated cooldown choices, source hashes/second-apply refusal, DOM text-only rendering and positive opt-in confirmations.
 - **Status:** HOST IMPLEMENTED; test root bridge on real KernelSU still OPEN.
+
+
+## GUARD-DT-021 — Post-boot soft locks bypass stable-PID boot checks (v0.12.2)
+
+- **Evidence:** `service.sh` previously marked a boot healthy following `sys.boot_completed` and a stable SystemUI PID without inspecting a persistent framework startup dialog.
+- **Affected:** LSPosed Guardian `service.sh`, `lib/softlock.sh`, `guardian.sh`, KernelSU WebUI, module policy.
+- **Implemented:** bounded, fail-closed WindowManager TYPE_BOOT_PROGRESS observer, explicit same-boot receipts, per-feature root policy and one-shot guarded Vector disable/reboot path; fail-closed source-specific overlay and regression coverage.
+- **Status:** source/host behavior delivered; **OPEN** real-device ROM probe, observed soft-lock receipt, and unattended recovery qualification. Unsupported OEM interfaces remain unverified.
+- **Recommended follow-up:** add real-device fixture for each confirmed `dumpsys window` format and preserve before/after recovery evidence. Do not equate tests of source policy with successful on-device automatic recovery.

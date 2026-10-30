@@ -31,11 +31,15 @@ load_config() {
   RECOVERY_DEVICE_QUALIFIED=0 CRASH_EXCLUDE_PACKAGES=com.openai.chatgpt
   HISTORY_MONITOR=1 HISTORY_POLL_SECONDS=180 HISTORY_MAX_AGE_SECONDS=240
   AUTO_QUARANTINE=0 AUTO_QUARANTINE_ALLOWLIST= AUTO_QUARANTINE_POLICY=allowlist AUTO_QUARANTINE_COOLDOWN_SECONDS=43200 AUTO_SAFE_MODE=0 AUTO_BOOTLOOP_REBOOT=0 ACTION_NOTIFICATIONS=0
+  SOFTLOCK_MONITOR=1 SOFTLOCK_GRACE_SECONDS=180 AUTO_SOFTLOCK=0
   [ -f "$CFG" ] && . "$CFG"
   case "$AUTO_RECOVERY" in 0|1) : ;; *) AUTO_RECOVERY=0 ;; esac
   # Legacy unattended SQLite restore is deliberately retired. Never let its
   # persisted config flag re-enable the unsafe unjournaled restore function.
   case "$ACTION_NOTIFICATIONS" in 0|1) : ;; *) ACTION_NOTIFICATIONS=0 ;; esac
+  case "$SOFTLOCK_MONITOR" in 0|1) : ;; *) SOFTLOCK_MONITOR=0 ;; esac
+  case "$AUTO_SOFTLOCK" in 0|1) : ;; *) AUTO_SOFTLOCK=0 ;; esac
+  if ! is_number "$SOFTLOCK_GRACE_SECONDS" || [ "$SOFTLOCK_GRACE_SECONDS" -lt 120 ] || [ "$SOFTLOCK_GRACE_SECONDS" -gt 600 ]; then SOFTLOCK_GRACE_SECONDS=180; fi
   case "$AUTO_QUARANTINE" in 0|1) : ;; *) AUTO_QUARANTINE=0 ;; esac
   case "$AUTO_SAFE_MODE" in 0|1) : ;; *) AUTO_SAFE_MODE=0 ;; esac
   case "$AUTO_BOOTLOOP_REBOOT" in 0|1) : ;; *) AUTO_BOOTLOOP_REBOOT=0 ;; esac
@@ -73,7 +77,7 @@ guardian_notify() {
   [ "$ACTION_NOTIFICATIONS" = 1 ] || return 0
   GN_TYPE="$1" GN_TARGET="${2:-}"
   case "$GN_TYPE" in
-    auto-quarantined|auto-quarantine-failed|vector-safe-mode|watchdog-reboot|test) : ;;
+    auto-quarantined|auto-quarantine-failed|vector-safe-mode|watchdog-reboot|softlock-rescue|test) : ;;
     *) return 1 ;;
   esac
   case "$GN_TARGET" in *[!a-zA-Z0-9_.-]*|*..*) GN_TARGET=unknown ;; esac

@@ -6,6 +6,7 @@ MODDIR="${0%/*}"
 . "$MODDIR/lib/boot-trial.sh" || exit 0
 . "$MODDIR/lib/one-shot.sh" || exit 0
 . "$MODDIR/lib/safe-mode.sh" || exit 0
+. "$MODDIR/lib/softlock.sh" || exit 0
 init_state || exit 0
 load_config
 ID="$(boot_id)"
@@ -59,6 +60,20 @@ if [ "$SYSTEMUI_STRIKES" -gt 0 ]; then
   exit 0
 fi
 
+# A stable SystemUI PID does not prove Android dismissed the boot-progress dialog.
+# Observe current boot BEFORE rotating success receipts or beginning collectors.
+SL_OBSERVE_RESULT=0
+sl_observe || SL_OBSERVE_RESULT=$?
+if [ "$SL_OBSERVE_RESULT" -eq 2 ]; then
+  sl_recover || :
+  exit 0
+fi
+# Unsupported visibility is distinct from a confirmed clear result; the
+# regular boot stability receipt remains a *process* health receipt only.
+if [ "$SL_OBSERVE_RESULT" -ne 0 ]; then
+  log WARN 'Softlock window detection unverified; no automatic rescue action'
+fi
+
 # A failed snapshot must not make an otherwise stable boot count as a bootloop.
 # Only rotate a known-good DB when Vector's own consistent backup succeeds.
 successful_snapshot || :
@@ -67,6 +82,15 @@ write_atomic "$BOOT_DIR/failures" 0
 write_atomic "$BOOT_DIR/auto-reboot-count" 0 || :
 rm -f "$BOOT_DIR/pending-id" "$BOOT_DIR/recovery-performed"
 log HEALTH 'Boot stable, consecutive-failure counter cleared'
+# A previous one-shot softlock attempt stays latched while Vector is disabled.
+# Only a *later* stable boot with Vector restored/healthy releases that latch.
+if [ -s "$STATE_DIR/softlock/recovery-attempt" ] &&
+   [ ! -e /data/adb/modules/zygisk_vector/disable ] &&
+   vector status >/dev/null 2>&1; then
+  cp "$STATE_DIR/softlock/recovery-attempt" "$STATE_DIR/softlock/last-recovery-attempt" 2>/dev/null || :
+  rm -f "$STATE_DIR/softlock/recovery-attempt"
+  log HEALTH 'Prior softlock rescue latch released after Vector healthy restoration'
+fi
 # Read-only history state attestation; failure never makes a healthy boot fail.
 crash_continuity_boot || log WARN 'Crash continuity boot checkpoint unavailable'
 bp_stable || :
