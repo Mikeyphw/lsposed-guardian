@@ -218,3 +218,21 @@ Evidence received from the owner's **actual Android 13 / Vector 3112** environme
 
 ## Guardian v0.10.0 personal automation consolidation (2026-10-28)
 Source-bound v0.9.4 -> v0.10.0 integrates v0.9.5 staged/active KernelSU parity and crash-continuity receipts, explicit allowlist auto quarantine with reversible journal, and optional non-SQLite bootloop safe mode. Old unjournaled `offline_restore()` is permanently retired; automatic SQLite restoration is not qualified or enabled. See `docs/PERSONAL_AUTOMATION.md`. Open evidence: real Android opt-in behavior, offline undo in custom recovery, startup-race/power-loss interruption. Status: host implementation; native device acceptance pending.
+
+## Guardian v0.11.0 — Automatic personal protection (2026-10-29)
+
+- [x] Single `automatic-on --apply` switch: no per-module allowlist, with only
+  one uniquely matched enabled/scoped Vector module eligible for a journaled
+  quarantine; `automatic-off` disarms both engines.
+- [x] Root-only policy validation, crash/scope checks, protected package list,
+  same-boot/recency constraints, cooldown, one attempt per boot, ledger + undo.
+- [x] Bounded 3-attempt watchdog for incomplete boot / 3 SystemUI strikes;
+  single safe-mode disable marker for Vector; no SQLite family modification.
+- [x] Do not compete with an installed AshReXcue on platform bootloop control.
+- [x] Legacy unsafe unattended SQLite replacement remains retired.
+- [x] Host fixtures: automatic-on/off, single-candidate response, protected apps,
+  legacy flag refusal; full fake-Vector and Devtool contract gates.
+- [ ] Native v0.11.0 installed runtime automatic behavior after first enable.
+- [ ] Real bootloop/safe-mode response on disposable device (intentionally not
+  forced on the personal daily driver).
+- [ ] Exclusive Vector DB access and interruption-safe automated restore.

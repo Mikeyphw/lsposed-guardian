@@ -125,4 +125,45 @@ class PersonalAutomationTests(unittest.TestCase):
             self.fixt.next_boot(boot)
         self.assertEqual(self.fixt.get_version(),0)
 
+    def test_single_switch_enables_all_eligible_scoped_modules_without_allowlist(self):
+        conf=self.fixt.state/'config.conf'
+        conf.write_text(conf.read_text().replace('PASSIVE_CRASH_MONITOR=0','PASSIVE_CRASH_MONITOR=1').replace('HISTORY_MONITOR=0','HISTORY_MONITOR=1'))
+        self.fixt.env['FAKE_SCOPES_JSON']=json.dumps({'mod.alpha':[{'APP_PACKAGE':'org.example.app','USER_ID':0}]})
+        self.run_guard('history-capture')
+        stamp=int(time.time())
+        for d in ('monitor','history'):
+            base=self.fixt.state/d
+            base.mkdir(parents=True,exist_ok=True)
+            for k,v in {'last-boot':'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee','last-result':'ok','last-epoch':str(stamp)}.items():
+                (base/k).write_text(v+'\n')
+        out=self.run_guard('automatic-on','--apply')
+        self.assertIn('PASS_GUARDIAN_AUTOMATIC_MODE_ARMED',out)
+        status=self.run_guard('automatic-status')
+        self.assertIn('policy=all_scoped',status)
+        self.assertIn('safe_mode_armed=1',status)
+        self.assertIn('auto_bootloop_reboot=1',status)
+        self.write_events(stamp)
+        self.run_guard('auto-tick','--apply')
+        self.assertFalse(self.enabled())
+        out=self.run_guard('automatic-off')
+        self.assertIn('PASS_GUARDIAN_AUTOMATIC_MODE_DISARMED',out)
+        self.assertIn('auto_quarantine=0',self.run_guard('automatic-status'))
+        self.assertIn('safe_mode_armed=0',self.run_guard('automatic-status'))
+        self.assertFalse(self.enabled()) # disarm must never silently roll back
+
+    def test_single_switch_fails_when_legacy_flag_is_armed(self):
+        p=self.fixt.state/'config.conf'
+        p.write_text(p.read_text().replace('AUTO_RECOVERY=0','AUTO_RECOVERY=1'))
+        self.run_guard('automatic-on','--apply',expect=1)
+        self.assertIn('auto_quarantine=0',self.run_guard('automatic-status'))
+
+    def test_single_switch_requires_apply(self):
+        self.run_guard('automatic-on',expect=2)
+        self.assertIn('auto_quarantine=0',self.run_guard('automatic-status'))
+
+    def test_writable_policy_fields_are_restricted_to_enumerated_values(self):
+        out=self.run_guard('automatic-status')
+        self.assertIn('policy=allowlist',out)
+        self.assertIn('legacy_unjournaled_sqlite_restore=DISABLED',out)
+
 if __name__=='__main__': unittest.main()

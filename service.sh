@@ -5,6 +5,7 @@ MODDIR="${0%/*}"
 . "$MODDIR/lib/boot-probe.sh" || exit 0
 . "$MODDIR/lib/boot-trial.sh" || exit 0
 . "$MODDIR/lib/one-shot.sh" || exit 0
+. "$MODDIR/lib/safe-mode.sh" || exit 0
 init_state || exit 0
 load_config
 ID="$(boot_id)"
@@ -19,6 +20,7 @@ WAITED=0
 while ! boot_complete; do
   if [ "$WAITED" -ge "$BOOT_WAIT_SECONDS" ]; then
     log WARN 'Boot completion timeout; pending observation preserved'
+    sm_watchdog_reboot boot-timeout || :
     exit 0
   fi
   sleep 5
@@ -28,6 +30,7 @@ log BOOT 'Android boot completed; starting stability checks'
 
 STABLE=0
 PREVIOUS_PID=''
+SYSTEMUI_STRIKES=0
 ELAPSED=0
 while [ "$ELAPSED" -lt "$STABILITY_SECONDS" ]; do
   if ! boot_complete; then
@@ -36,26 +39,32 @@ while [ "$ELAPSED" -lt "$STABILITY_SECONDS" ]; do
   fi
   if [ "$CHECK_SYSTEMUI" = 1 ]; then
     PID="$(pidof com.android.systemui 2>/dev/null | awk '{print $1}')"
-    if [ -z "$PID" ]; then
-      log WARN 'SystemUI absent during stability check; pending observation preserved'
-      exit 0
+    if [ -z "$PID" ] || { [ -n "$PREVIOUS_PID" ] && [ "$PID" != "$PREVIOUS_PID" ]; }; then
+      SYSTEMUI_STRIKES=$((SYSTEMUI_STRIKES + 1))
+      log WARN "SystemUI instability observed ($SYSTEMUI_STRIKES/3)"
+      if [ "$SYSTEMUI_STRIKES" -ge 3 ]; then
+        log WARN 'SystemUI crash loop: pending boot deliberately not marked stable'
+        sm_watchdog_reboot systemui-three-strikes || :
+        exit 0
+      fi
     fi
-    if [ -n "$PREVIOUS_PID" ] && [ "$PID" != "$PREVIOUS_PID" ]; then
-      log WARN 'SystemUI process restarted during stability check; pending observation preserved'
-      exit 0
-    fi
-    PREVIOUS_PID="$PID"
+    [ -z "$PID" ] || PREVIOUS_PID="$PID"
   fi
   sleep 5
   ELAPSED=$((ELAPSED + 5))
 done
 STABLE=1
+if [ "$SYSTEMUI_STRIKES" -gt 0 ]; then
+  log WARN 'SystemUI instability during observation; treating boot as unqualified'
+  exit 0
+fi
 
 # A failed snapshot must not make an otherwise stable boot count as a bootloop.
 # Only rotate a known-good DB when Vector's own consistent backup succeeds.
 successful_snapshot || :
 write_atomic "$BOOT_DIR/last-success-id" "$ID"
 write_atomic "$BOOT_DIR/failures" 0
+write_atomic "$BOOT_DIR/auto-reboot-count" 0 || :
 rm -f "$BOOT_DIR/pending-id" "$BOOT_DIR/recovery-performed"
 log HEALTH 'Boot stable, consecutive-failure counter cleared'
 # Read-only history state attestation; failure never makes a healthy boot fail.

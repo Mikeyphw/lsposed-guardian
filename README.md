@@ -69,3 +69,15 @@ The `./devtoolw install` workflow now runs the full test DAG and exact-evidence 
 
 ## Guardian v0.10.0 personal automation consolidation (2026-10-28)
 Source-bound v0.9.4 -> v0.10.0 integrates v0.9.5 staged/active KernelSU parity and crash-continuity receipts, explicit allowlist auto quarantine with reversible journal, and optional non-SQLite bootloop safe mode. Old unjournaled `offline_restore()` is permanently retired; automatic SQLite restoration is not qualified or enabled. See `docs/PERSONAL_AUTOMATION.md`. Open evidence: real Android opt-in behavior, offline undo in custom recovery, startup-race/power-loss interruption. Status: host implementation; native device acceptance pending.
+
+### Automatic personal mode (v0.11.0)
+
+After installing and rebooting the updated module, use **one command** to allow
+unattended narrowly scoped crash quarantine and KernelSU Vector safe-mode
+fallback: `sudo /system/bin/sh /data/adb/modules/lsposed_guardian/guardian.sh automatic-on --apply`.
+No per-module allowlist or confirmation is required for later eligible incidents.
+Stop future actions with `automatic-off`. See
+[`docs/AUTOMATIC_PERSONAL_MODE.md`](docs/AUTOMATIC_PERSONAL_MODE.md).
+No unattended SQLite restore. If AshReXcue is installed, it remains responsible
+for platform-wide bootloop decisions; Guardian does not run a competing
+KernelSU reboot or Vector disable mechanism.

@@ -35,3 +35,8 @@ AUTO_QUARANTINE_ALLOWLIST=
 AUTO_QUARANTINE_COOLDOWN_SECONDS=43200
 # Bootloop fallback: mark Vector disabled for the FOLLOWING boot (no DB edits).
 AUTO_SAFE_MODE=0
+# Dedicated automatic mode can opt into all uniquely scoped eligible modules.
+# Never silently enabled during an upgrade.
+AUTO_QUARANTINE_POLICY=allowlist
+# Optional bounded reboot watchdog, armed only with automatic-on --apply.
+AUTO_BOOTLOOP_REBOOT=0

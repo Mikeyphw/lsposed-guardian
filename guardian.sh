@@ -68,6 +68,9 @@ Usage: guardian.sh COMMAND [ARGS]
   auto-allow PKG --apply  Explicitly allowlist an eligible module for automatic quarantine
   auto-deny PKG --apply   Remove a module from the automatic allowlist
   auto-arm --apply       Enable conservative scoped crash response (allowlist required)
+  automatic-on --apply   Enable unattended scoped response + Vector bootloop fallback
+  automatic-off         Stop new automatic actions without reboot
+  automatic-status      Show automatic policy and bootloop state
   auto-disarm           Disable automatic quarantine immediately
   auto-status           Show allowlist and last automatic action
   auto-tick --apply      Run one guarded auto-quarantine evaluation now (no bypass)
@@ -105,7 +108,7 @@ set_auto() {
 
 personal_config_set() {
   PCS_KEY="$1" PCS_VALUE="$2"
-  case "$PCS_KEY" in AUTO_QUARANTINE|AUTO_QUARANTINE_ALLOWLIST|AUTO_SAFE_MODE) : ;; *) return 1;; esac
+  case "$PCS_KEY" in AUTO_QUARANTINE|AUTO_QUARANTINE_ALLOWLIST|AUTO_QUARANTINE_POLICY|AUTO_SAFE_MODE|AUTO_BOOTLOOP_REBOOT) : ;; *) return 1;; esac
   case "$PCS_VALUE" in *[!a-zA-Z0-9_.,]*) return 1;; esac
   PCS_TEMP="$CFG.personal.$$"
   # Rewrite a known key or append it. No eval, no shell metacharacters.
@@ -149,6 +152,8 @@ status() {
   echo "device_restore_qualified=$RECOVERY_DEVICE_QUALIFIED"
   echo "auto_quarantine=$AUTO_QUARANTINE"
   echo "auto_safe_mode=$AUTO_SAFE_MODE"
+  echo "auto_quarantine_policy=$AUTO_QUARANTINE_POLICY"
+  echo "auto_bootloop_reboot=$AUTO_BOOTLOOP_REBOOT"
   echo "baseline_policy=pinned"
   echo "baseline_boot=$(baseline_boot_label)"
   echo "baseline_provenance=$(baseline_provenance)"
@@ -424,6 +429,44 @@ case "${1:-help}" in
     if [ "${2:-}" != '--apply' ]; then echo 'Explicit promote --apply required' >&2; exit 2; fi
     promote_snapshot || exit 1
     ;;
+  automatic-on)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || { echo 'automatic-on requires --apply' >&2; exit 2; }
+    # One-time authorization for unattended reversible actions. No unverified
+    # Vector SQLite restore, no baseline promotion, and no current module toggle.
+    [ "$AUTO_RECOVERY" = 0 ] && boot_complete &&
+      [ "$(read_first "$BOOT_DIR/last-success-id")" = "$(boot_id)" ] &&
+      [ "$PASSIVE_CRASH_MONITOR" = 1 ] && [ "$HISTORY_MONITOR" = 1 ] &&
+      vector status >/dev/null 2>&1 &&
+      [ ! -e "$BOOT_DIR/manual-restore" ] && [ ! -e "$OS_REQ" ] || {
+      echo 'Refusing automatic mode: Android/Vector not stable, passive monitors disabled, or restore pending' >&2; exit 1; }
+    # Persist the mode first, then its individually validated switches. If
+    # interrupted in between, only narrower permissions can result.
+    personal_config_set AUTO_QUARANTINE_POLICY all_scoped || exit 1
+    personal_config_set AUTO_SAFE_MODE 1 || exit 1
+    personal_config_set AUTO_BOOTLOOP_REBOOT 1 || exit 1
+    personal_config_set AUTO_QUARANTINE 1 || exit 1
+    echo 'PASS_GUARDIAN_AUTOMATIC_MODE_ARMED'
+    echo 'scoped_crash_response=ALL_ELIGIBLE_UNIQUE_SCOPED_MODULES'
+    echo 'bootloop_response=VECTOR_KSU_DISABLE_AND_BOUNDED_WATCHDOG'
+    echo 'automatic_sqlite_restore=DISABLED'
+    echo 'current_modules_modified=false'
+    ;;
+  automatic-off)
+    # Disable live collector responses immediately (reload per poll); boot
+    # hook reads the same file on every next boot. Preserve any past marker.
+    personal_config_set AUTO_QUARANTINE 0 || exit 1
+    personal_config_set AUTO_SAFE_MODE 0 || exit 1
+    personal_config_set AUTO_BOOTLOOP_REBOOT 0 || exit 1
+    echo 'PASS_GUARDIAN_AUTOMATIC_MODE_DISARMED'
+    echo 'existing_quarantines_and_disable_markers_preserved=true'
+    ;;
+  automatic-status)
+    ag_status
+    sm_status
+    echo "auto_bootloop_reboot=$AUTO_BOOTLOOP_REBOOT"
+    echo "watchdog_reboot_count=$(read_first "$BOOT_DIR/auto-reboot-count")"
+    echo 'legacy_unjournaled_sqlite_restore=DISABLED'
+    ;;
   auto-allow|auto-deny)
     [ "${3:-}" = --apply ] && [ -z "${4:-}" ] || { echo 'Explicit PKG --apply required' >&2; exit 2; }
     ag_pkg_safe "${2:-}" || { echo 'Protected or invalid package' >&2; exit 2; }
@@ -440,7 +483,7 @@ case "${1:-help}" in
     echo "allowlist=$AG_EDIT" ;;
   auto-arm)
     [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || exit 2
-    [ -n "$AUTO_QUARANTINE_ALLOWLIST" ] && [ "$PASSIVE_CRASH_MONITOR" = 1 ] &&
+    [ "$AUTO_QUARANTINE_POLICY" = allowlist ] && [ -n "$AUTO_QUARANTINE_ALLOWLIST" ] && [ "$PASSIVE_CRASH_MONITOR" = 1 ] &&
       [ "$HISTORY_MONITOR" = 1 ] && boot_complete &&
       [ "$(read_first "$BOOT_DIR/last-success-id")" = "$(boot_id)" ] &&
       monitor_recent_poll && history_recent_poll && vector status >/dev/null 2>&1 || {

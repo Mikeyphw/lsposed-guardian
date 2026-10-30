@@ -8,16 +8,19 @@ ag_pkg_safe() {
 }
 ag_allowlisted() {
   ag_pkg_safe "$1" || return 1
+  [ "$AUTO_QUARANTINE_POLICY" != all_scoped ] || return 0
   case ",$AUTO_QUARANTINE_ALLOWLIST," in *,"$1",*) return 0;; *) return 1;; esac
 }
 ag_status() {
   echo "auto_quarantine=$AUTO_QUARANTINE"
+  echo "policy=$AUTO_QUARANTINE_POLICY"
   echo "allowlist=$AUTO_QUARANTINE_ALLOWLIST"
   echo "cooldown_seconds=$AUTO_QUARANTINE_COOLDOWN_SECONDS"
   echo "attempted_boot=$(read_first "$AG_DIR/attempted-boot")"
   echo "last_action_epoch=$(read_first "$AG_DIR/last-action-epoch")"
   echo "last_action_module=$(read_first "$AG_DIR/last-action-module")"
   echo 'causality=NOT_ESTABLISHED'
+  echo 'scope_selection=unique_historical_scope_only; automatic_rollbacks=manual'
 }
 ag_plan_app() {
   # Only recent same-boot samples are eligible. A matching scope is not proof

@@ -107,3 +107,18 @@ Finding: `early-boot-preflight` ran only after Android startup and cannot establ
 
 ## Guardian v0.10.0 personal automation consolidation (2026-10-28)
 Source-bound v0.9.4 -> v0.10.0 integrates v0.9.5 staged/active KernelSU parity and crash-continuity receipts, explicit allowlist auto quarantine with reversible journal, and optional non-SQLite bootloop safe mode. Old unjournaled `offline_restore()` is permanently retired; automatic SQLite restoration is not qualified or enabled. See `docs/PERSONAL_AUTOMATION.md`. Open evidence: real Android opt-in behavior, offline undo in custom recovery, startup-race/power-loss interruption. Status: host implementation; native device acceptance pending.
+
+### Guardian v0.11.0 single-switch personal automation
+
+- **Evidence:** v0.10.0 exposed separate `auto-allow`/`auto-arm` and
+  `safe-mode-arm`; this created repeated user steps and prevented hands-off
+  activation. AshReXcue is detected on the device and already handles KernelSU
+  boot protection; two independent watchdogs could compete.
+- **Change:** one validated activation controls scoped response, guarded
+  Vector fallback, and bounded reboot watchdog. When AshReXcue is present,
+  Guardian defers bootloop mutations. Source-bound release accepts v0.9.4 or
+  v0.10.0 exact source states, installs once through Devtool, and retains original
+  recovery evidence. `/data/adb/lspd/config/modules_config.db` is never edited
+  by this automation path.
+- **Status:** implementation complete; fake-Vector host acceptance available;
+  native automatic incident and physical boot rescue not yet evidenced.
