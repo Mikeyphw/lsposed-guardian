@@ -7,6 +7,7 @@ recovery_plan() {
   RP_CANDIDATE="$(printf '%s\n' "$RP_OUTPUT" | sed -n 's/^candidate_for_manual_review=//p' | head -n 1)"
   printf 'target=%s\n' "$RP_TARGET"
   printf 'decision=%s\n' "$RP_DECISION"
+  printf '%s\n' "$RP_OUTPUT" | grep -E '^(recent_crash_count|distinct_process_count|last_matched_scope_count|causality)=' || :
   printf 'mode=REVIEW_ONLY\n'
   printf 'automatic_action=disabled\n'
   if [ "$RP_DECISION" = REVIEW_SINGLE_SCOPED_MODULE ] && [ -n "$RP_CANDIDATE" ]; then

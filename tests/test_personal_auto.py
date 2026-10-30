@@ -161,6 +161,66 @@ class PersonalAutomationTests(unittest.TestCase):
         self.run_guard('automatic-on',expect=2)
         self.assertIn('auto_quarantine=0',self.run_guard('automatic-status'))
 
+    def test_notification_opt_in_transport_is_explicit_and_fail_closed(self):
+        self.assertIn('notifications_enabled=0',self.run_guard('notifications-status'))
+        self.run_guard('notifications-test','--apply',expect=1)
+        self.run_guard('notifications-on','--apply')
+        out=self.run_guard('notifications-status')
+        self.assertIn('notifications_enabled=1',out)
+        self.assertIn('delivery_confirmation=NOT_AVAILABLE_FROM_SHELL',out)
+        self.run_guard('notifications-test','--apply',expect=1)
+        self.assertIn('notifications_last_result=unavailable_or_rejected',self.run_guard('notifications-status'))
+        self.run_guard('notifications-off')
+        self.assertIn('notifications_enabled=0',self.run_guard('notifications-status'))
+        self.run_guard('notifications-on',expect=2)
+        self.run_guard('notifications-test',expect=2)
+
+    def test_webui_crash_exclusions_and_cooldown_are_real_root_policy(self):
+        out=self.run_guard('automatic-status')
+        self.assertIn('crash_exclude_packages=com.openai.chatgpt',out)
+        self.assertIn('cooldown_seconds=43200',out)
+        self.assertIn('history_monitor_enabled=',out)
+        self.run_guard('exclusion-add','org.example.app','--apply')
+        self.assertIn('org.example.app',self.run_guard('automatic-status'))
+        self.run_guard('exclusion-add','org.example.app','--apply')
+        self.assertEqual(self.run_guard('automatic-status').count('org.example.app'),1)
+        self.run_guard('exclusion-remove','org.example.app','--apply')
+        self.assertNotIn('org.example.app',self.run_guard('automatic-status'))
+        self.run_guard('exclusion-remove','com.openai.chatgpt','--apply',expect=2)
+        self.run_guard('exclusion-add','invalid;reboot','--apply',expect=2)
+        self.run_guard('exclusion-add','com.android.systemui','--apply',expect=2)
+        self.assertIn('com.openai.chatgpt',self.run_guard('automatic-status'))
+        self.run_guard('cooldown-set','86400','--apply')
+        self.assertIn('cooldown_seconds=86400',self.run_guard('automatic-status'))
+        self.run_guard('cooldown-set','1','--apply',expect=2)
+        self.run_guard('cooldown-set','86400',expect=2)
+        self.assertIn('cooldown_seconds=86400',self.run_guard('automatic-status'))
+
+    def test_structured_module_scopes_and_verified_history(self):
+        self.fixt.env['FAKE_SCOPES_JSON']=json.dumps({'mod.alpha':[{'APP_PACKAGE':'org.example.app','USER_ID':0}]})
+        count=self.run_guard('scope-structured','mod.alpha')
+        self.assertIn('scope_count=1',count)
+        self.assertIn('scope=org.example.app|0',count)
+        self.run_guard('history-capture')
+        h=self.run_guard('history-module','mod.alpha')
+        self.assertRegex(h,r'module_observation=\d+\|1\|1')
+        # Mismatched checksums must not generate unverifiable observations.
+        checkpoints=self.fixt.state/'history/checkpoints'
+        original=next(checkpoints.glob('*.tsv'))
+        original.write_text(original.read_text()+'S\tmod.alpha\torg.bad.app\t0\n')
+        self.run_guard('history-module','mod.alpha',expect=1)
+        self.run_guard('scope-structured','invalid;reboot',expect=2)
+
+    def test_sampler_background_failure_remains_visible_after_manual_capture(self):
+        base=self.fixt.state/'history';base.mkdir(parents=True,exist_ok=True)
+        (base/'last-background-failure-reason').write_text('vector_scope_unavailable\n')
+        (base/'last-background-failure-module').write_text('mod.alpha\n')
+        self.run_guard('history-capture')
+        status=self.run_guard('history-health')
+        self.assertIn('history_last_failure_reason=vector_scope_unavailable',status)
+        self.assertIn('history_last_failure_module=mod.alpha',status)
+        self.assertIn('history_manual_or_background_capture_reason=none',status)
+
     def test_writable_policy_fields_are_restricted_to_enumerated_values(self):
         out=self.run_guard('automatic-status')
         self.assertIn('policy=allowlist',out)

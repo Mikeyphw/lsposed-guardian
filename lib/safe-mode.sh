@@ -33,6 +33,7 @@ sm_early() {
   chmod 600 "$SM_DIR/disable" 2>/dev/null || :
   sync
   log WARN 'Bootloop threshold reached: Vector disabled for NEXT boot only; no SQLite changes or reboot attempted'
+  guardian_notify vector-safe-mode "$(boot_id | tr -cd 'a-fA-F0-9-')" || :
 }
 
 # Bounded unattended watchdog: up to three restarts per unresolved incident.
@@ -64,5 +65,6 @@ sm_watchdog_reboot() {
   write_atomic "$BOOT_DIR/auto-reboot-$SM_BOOT" "$1" || return 0
   sync
   log WARN "Automatic rescue reboot requested ($1, attempt $((SM_COUNT + 1))/3)"
+  guardian_notify watchdog-reboot "$(boot_id | tr -cd 'a-fA-F0-9-')" || :
   /system/bin/reboot || log WARN 'Automatic watchdog reboot command failed'
 }

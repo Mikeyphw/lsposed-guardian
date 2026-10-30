@@ -122,6 +122,7 @@ q_apply() {
   rm -f "$QPENDING/$PK.record" "$QPENDING/$PK.before"
   q_cleanup_inventory; q_unlock
   log QUARANTINE "Disabled $PK ($Q_ATTRIBUTION); reversible record saved; no hook causality assigned"
+  [ "$Q_ATTRIBUTION" != AUTO_CORRELATED_NOT_CAUSAL ] || guardian_notify auto-quarantined "$PK" || :
   echo "QUARANTINED $PK: confirmed disabled; reversible record retained. Running hooks may persist."
 }
 q_rollback() {

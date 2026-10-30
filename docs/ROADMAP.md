@@ -236,3 +236,30 @@ Source-bound v0.9.4 -> v0.10.0 integrates v0.9.5 staged/active KernelSU parity a
 - [ ] Real bootloop/safe-mode response on disposable device (intentionally not
   forced on the personal daily driver).
 - [ ] Exclusive Vector DB access and interruption-safe automated restore.
+
+## v0.12.0 consolidated KernelSU WebUI (host acceptance)
+- [x] New responsive overview with distinct boot, crash collector, scope sampler, automatic crash protection and safe mode status.
+- [x] Persistent five-item navigation; full module inventory, search/filter, compact scope-detail panels without direct toggle side effects.
+- [x] Activity timeline for explicit quarantine and newly observed configuration differences; past snapshots are **observations**, not exact module toggle times.
+- [x] Reader-friendly reviewer and expandable technical qualification/integrity/boot diagnostics; copyable redacted diagnostic report.
+- [x] Explicit KernelSU-confirmed guarded `automatic-on/off` and `safe-mode-arm/disarm` UI with direct CLI readback; no direct Vector DB write commands in WebUI.
+- [x] Bounded sampler failure-class and module-ID diagnostic with read-only retry; invalid/partial checkpoints remain rejected.
+- [x] Host WebUI bridge, deliberate action, timeline, scope filtering and failure-mode tests; current backend fake-Vector regression.
+- [ ] Confirm v0.12.0 active WebUI in KernelSU after normal module update/reboot and collect UI screenshots.
+- [ ] Determine and fix exact historical sampler error on device from `history-health` output: v0.11 showed `last-result=error` but no cause. New diagnostics classify error; the cause must not be invented.
+- [ ] Implement platform notification delivery (not offered by v0.12). Current in-WebUI action feedback works only while UI is open.
+- [ ] Unattended DB restore remains permanently disabled pending offline redo safety; automatic early-boot behavior not qualified by UI tests.
+
+## v0.12.1 audited WebUI correction (2026-10-30)
+
+- [x] Verify v0.12.0 overlay source hashes against v0.11.0 snapshot and inspect live root-backed functions, not UI presence only.
+- [x] Correct policy-health readback, partial-failure behavior, per-subsystem monitoring and manual/background sampler differentiation.
+- [x] Add real root-backed cooldown/exclusion controls with immutable exclusions and host tests.
+- [x] Show checksum-verified per-module scope observations, detailed process-review evidence, typed quarantine ledger, and a trustworthy 2-snapshot change summary.
+- [x] Add optional, noncritical Android notification transport and user-invoked test; preserve receipts on transport failures.
+- [ ] Verify v0.12.1 after KernelSU installation / reboot on real Android, then capture actual WebUI callback and notification-delivery evidence.
+- [ ] Diagnose actual Vector-scope sampler failure using on-device `history-health`, `scope-structured`, and Vector JSON for the failing module.
+- [ ] Test real unattended quarantine/rollback and early-boot watchdog on a disposable device with independent recovery, without qualifying unattended SQLite restore.
+- [ ] Obtain actual recovery-trigger incident receipt, proof of rollback and on-device notification delivery before marking fully complete.
+
+See `docs/WEBUI_V012_AUDIT.md` for a promise-by-promise status table. This correction is source-bound and does not arm automatic actions during an upgrade.

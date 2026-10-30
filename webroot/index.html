@@ -1,61 +1,82 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="color-scheme" content="dark light">
-  <title>LSPosed Guardian</title>
-  <link rel="stylesheet" href="main.css">
-  <script defer src="main.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#10141d">
+<title>LSPosed Guardian</title>
+<link rel="stylesheet" href="main.css">
+<script defer src="main.js"></script>
 </head>
 <body>
-  <main class="shell">
-    <header>
-      <div class="eyebrow">VECTOR · ROOT RECOVERY MONITOR</div>
-      <div class="top"><h1>Guardian <span id="version">v0.9</span></h1><button id="refresh" type="button">Refresh</button></div>
-      <p>Diagnostics and review only. No automatic module changes.</p>
-    </header>
-    <section class="stats" aria-label="Guardian health">
-      <article><span>Recovery</span><strong id="mode">—</strong><small id="qual">Qualification unknown</small></article>
-      <article><span>Historical samples</span><strong id="samples">—</strong><small id="historyhealth">—</small></article>
-      <article><span>Collector</span><strong id="collector">—</strong><small>Current boot heartbeat</small></article>
-      <article><span>Quarantines</span><strong id="quarantine">—</strong><small id="pending">—</small></article>
+<a class="skip-link" href="#content">Skip to main content</a>
+<div class="shell">
+  <header class="app-header">
+    <div><div class="eyebrow">LSPOSED · VECTOR PROTECTION</div><h1>Guardian <small id="version">v—</small></h1><p id="updated" class="subtle">Checking device…</p></div>
+    <button type="button" id="refresh" class="btn-secondary" aria-label="Refresh Guardian status">↻ <span>Refresh</span></button>
+  </header>
+  <p id="message" class="message" role="status" aria-live="polite">Connecting to KernelSU…</p>
+  <main id="content">
+    <section id="home" class="screen active" aria-labelledby="home-title">
+      <h2 id="home-title" class="sr-only">Protection overview</h2>
+      <div class="hero panel">
+        <div class="hero-heading"><span class="hero-icon" aria-hidden="true">◇</span><div><h2 id="overall">Loading device status</h2><p id="overall-detail">Reading Vector and Guardian…</p></div></div>
+        <div class="status-lines">
+          <div><span>Automatic crash response</span><strong id="crash-protection">Checking…</strong></div>
+          <div><span>Bootloop fallback</span><strong id="boot-protection">Checking…</strong></div>
+          <div><span>Database restoration</span><strong>Manual only</strong></div>
+        </div>
+        <button id="open-protection" class="btn-primary" type="button">Manage protection</button>
+      </div>
+      <div class="stats" aria-label="Device overview">
+        <article class="panel"><span>Vector modules</span><strong id="modules-total">—</strong><small id="modules-summary">Loading inventory</small></article>
+        <article class="panel"><span>Quarantined</span><strong id="quarantine">—</strong><small id="pending">—</small></article>
+        <article class="panel"><span>Crash collector</span><strong id="collector">Checking</strong><small id="collector-detail">Current boot</small></article>
+        <article class="panel"><span>Scope sampler</span><strong id="sampler">Checking</strong><small id="sampler-detail">Current boot</small></article>
+      </div>
+      <div class="section-head"><h2>Recent activity</h2><button class="text-button" data-navigate="activity" type="button">See all</button></div>
+      <div class="panel activity-list" id="recent-activity"><p class="empty">Loading activity…</p></div>
+      <div id="attention" class="notice" role="status"></div>
+      <div class="panel service-details"><div class="section-head"><h3>Independent monitoring services</h3><button type="button" class="text-button" data-navigate="activity" id="monitor-details">Inspect activity</button></div><div id="health-summary" class="kv-grid"></div><div class="actions"><button id="retry-collector" type="button" class="btn-secondary">Collect crash events once</button><button id="view-sampler" type="button" class="btn-secondary">Sampler diagnostics</button></div><p class="fine-print">Manual checks do not restart either background service or certify current-boot poll health.</p></div>
     </section>
-    <nav class="tabs" aria-label="Sections">
-      <button type="button" class="active" data-tab="health">Health</button>
-      <button type="button" data-tab="modules">Modules</button>
-      <button type="button" data-tab="history">History</button>
-      <button type="button" data-tab="review">Review</button>
-    </nav>
-    <section id="health" class="section active">
-      <h2>Recovery qualification</h2><p class="hint">Sandbox passes do not qualify live early-boot restoration.</p><pre id="gates">Loading…</pre>
-      <h2>Recovery integrity</h2><pre id="integrity">Loading…</pre>
-      <h2>Boot health</h2><pre id="doctor">Loading…</pre>
+
+    <section id="modules" class="screen" aria-labelledby="modules-title">
+      <div class="section-head"><div><h2 id="modules-title">Modules</h2><p class="subtle" id="modulecount">Loading…</p></div></div>
+      <div class="module-controls"><input id="modulesearch" type="search" placeholder="Search installed modules" aria-label="Search modules" autocomplete="off" spellcheck="false"><select id="modulefilter" aria-label="Filter modules"><option value="all">All modules</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></div>
+      <div id="modulewarning" class="warning" role="status"></div>
+      <div id="modulelist" class="module-list" aria-live="polite"><p class="empty">Loading…</p></div>
+      <div id="module-details" class="panel detail-panel" hidden><div class="section-head"><h3 id="scope-title">Module scopes</h3><button id="close-scopes" class="icon-btn" type="button" aria-label="Close module details">✕</button></div><p class="subtle">Explicit Vector scopes describe configuration, not evidence of executed hooks.</p><div id="module-meta" class="kv-grid"></div><div id="module-quarantine" class="subtle"></div><details class="module-samples"><summary>Verified historical observations</summary><div id="module-history" class="activity-list">Choose a module.</div></details><div id="modulescope" class="scope-results">Choose a module above.</div></div>
     </section>
-    <section id="modules" class="section">
-      <h2>Vector modules</h2>
-      <p class="hint">All installed Xposed modules, enabled and disabled. This interface never toggles hooks.</p>
-      <p id="modulecount" class="module-count">Loading inventory…</p>
-      <div class="module-controls"><input id="modulesearch" type="search" placeholder="Search module package" aria-label="Search modules" autocomplete="off" spellcheck="false"><select id="modulefilter" aria-label="Filter module status"><option value="all">All</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></div>
-      <p id="modulewarning" class="module-warning" role="status"></p>
-      <div id="modulelist" class="module-list">Loading…</div>
-      <h2>Module scope inspection</h2><p class="hint">Select Scopes on any module. Reading scopes cannot change any module.</p><pre id="modulescope">Choose a module above to inspect its explicit scopes.</pre>
-      <h2>Quarantine records</h2><pre id="qstatus">Loading…</pre>
+
+    <section id="activity" class="screen" aria-labelledby="activity-title">
+      <h2 id="activity-title">Activity</h2><p class="subtle">Observed changes are not necessarily caused by Guardian.</p>
+      <div class="segmented" role="group" aria-label="Activity view"><button class="selected" type="button" data-activity="events">Events</button><button type="button" data-activity="samples">Sampling</button></div>
+      <div id="events-pane"><h3>Recent events</h3><div id="events-list" class="panel activity-list">Loading…</div><h3>Guardian quarantine history</h3><div id="quarantine-records" class="panel activity-list">Loading…</div><details class="panel"><summary>Full quarantine diagnostics</summary><pre id="quarantine-raw">Loading…</pre></details></div>
+      <div id="samples-pane" hidden><div class="panel summary-panel"><div class="section-head"><h3>Configuration sampling</h3><strong id="samples-count">— / 512</strong></div><p id="change-summary">Reading snapshots…</p><div id="verified-changes" class="activity-list"></div><small class="subtle">Sampling timestamps are observations, not activation times.</small></div><div id="sample-list" class="panel activity-list">Loading…</div><div class="panel summary-panel"><h3>Sampler diagnostic</h3><div id="sampler-fields" class="kv-grid"></div><button id="retry-sampler" class="btn-secondary" type="button">Capture a read-only sample now</button><p class="subtle">A manual capture reads Vector; it never changes modules or their scopes. A successful manual capture does not clear a prior background poll failure.</p></div></div>
     </section>
-    <section id="history" class="section">
-      <h2>Sampled configuration</h2><p class="hint">Samples represent observed states, not module activation timestamps.</p><pre id="hist">Loading…</pre>
-      <h2>Collector heartbeat</h2><pre id="heartbeat">Loading…</pre>
+
+    <section id="review" class="screen" aria-labelledby="review-title">
+      <h2 id="review-title">Investigate a process</h2><p class="subtle">Guardian compares recent crashes with previously recorded module scopes. A scope match is not proof of crash causality.</p>
+      <label for="target">Android package or system_server</label><div class="inline"><input id="target" value="com.android.systemui" spellcheck="false" autocapitalize="off" autocomplete="off"><button id="analyze" type="button">Analyze</button></div>
+      <div class="panel summary-panel"><h3>Investigation result</h3><div id="analysis-summary" class="kv-grid"><p class="empty">Run an analysis to view recorded evidence.</p></div><details><summary>Raw evidence</summary><pre id="analysis">No analysis yet.</pre></details></div>
+      <p class="notice">Guardian never disables a module based on this preview alone. Automatic decisions require additional evidence and explicit protection activation.</p>
     </section>
-    <section id="review" class="section">
-      <h2>Investigate a process</h2>
-      <p class="hint">Only review candidates with recorded historical evidence. A scope match cannot prove crash causality.</p>
-      <label for="target">Package or system_server</label>
-      <div class="inline"><input id="target" value="com.android.systemui" spellcheck="false" autocapitalize="off" autocomplete="off"><button id="analyze" type="button">Review</button></div>
-      <pre id="analysis">No analysis yet.</pre>
-      <p class="notice">Quarantine, rollback, snapshots and restoration require explicit commands outside this dashboard. Offline restoration remains unqualified.</p>
+
+    <section id="settings" class="screen" aria-labelledby="settings-title">
+      <h2 id="settings-title">Protection & settings</h2>
+      <div class="panel setting-panel"><div class="setting-head"><div><h3>Automatic protection</h3><p>Unattended scoped crash response and bootloop fallback</p></div><strong id="auto-state">Checking</strong></div><p class="subtle" id="auto-detail">Reading effective root policy…</p><div class="actions"><button id="arm" class="btn-primary" type="button" disabled>Enable protection</button><button id="disarm" class="btn-danger" type="button" disabled>Disarm all</button></div><p class="fine-print">Enabling may disable a uniquely eligible module after repeated crashes or request a Vector safe-mode fallback after failed boots. Existing quarantines are not undone by disarming. Automatic SQLite restoration is never enabled.</p></div>
+      <div class="panel setting-panel"><div class="setting-head"><div><h3>Bootloop fallback</h3><p>Independent Vector disable marker, not a database restore</p></div><strong id="safe-state">Checking</strong></div><p class="subtle" id="safe-owner">Checking AshReXcue ownership…</p><div class="actions"><button id="safe-arm" class="btn-secondary" type="button" disabled>Enable fallback</button><button id="safe-disarm" class="btn-secondary" type="button" disabled>Disable fallback</button></div></div>
+      <div class="panel setting-panel"><h3>Automatic quarantine safety policy</h3><div id="safeguard-summary" class="kv-grid"></div>
+        <label for="cooldown">Minimum time between successful interventions</label><div class="inline"><select id="cooldown"><option value="3600">1 hour</option><option value="10800">3 hours</option><option value="21600">6 hours</option><option value="43200">12 hours</option><option value="86400">24 hours</option><option value="172800">48 hours</option><option value="604800">7 days</option></select><button id="save-cooldown" class="btn-secondary" type="button" disabled>Save cooldown</button></div>
+        <label for="exclude-target">Ignored crash package</label><div class="inline"><input id="exclude-target" type="text" placeholder="com.example.app" autocapitalize="off" autocomplete="off" spellcheck="false"><button id="add-exclusion" type="button" disabled>Exclude</button></div><div id="exclusion-list" class="exclusion-list"></div><p class="fine-print">Exclusions apply to crash attribution, not to installed module inventory. com.openai.chatgpt is always excluded and cannot be removed.</p></div>
+      <div class="panel setting-panel"><h3>Current safety limits</h3><div id="policy-details" class="kv-grid">Loading…</div><p class="fine-print">Emergency disarm stops future automatic actions. It does not reverse past changes or remove a KernelSU disable marker.</p></div>
+      <div class="panel setting-panel"><h3>Device diagnostics</h3><div id="diagnostics" class="kv-grid">Loading…</div><div class="actions"><button id="copy-diagnostics" class="btn-secondary" type="button">Copy diagnostics</button><button id="show-technical" class="btn-secondary" type="button">Show technical details</button></div><div id="technical" hidden><details open><summary>Qualification</summary><pre id="gates">Loading…</pre></details><details><summary>Integrity</summary><pre id="integrity">Loading…</pre></details><details><summary>Doctor / boot logs</summary><pre id="doctor">Loading…</pre></details><details><summary>Crash retention audit</summary><pre id="crash-audit">Loading…</pre></details><details><summary>Automatic policy</summary><pre id="automatic-raw">Loading…</pre></details></div></div>
+      <div class="panel setting-panel"><h3>Privacy and notifications</h3><div class="setting-head"><div><p>Android action notifications</p><p class="fine-print">Best-effort system transport; not a replacement for Guardian's on-device journal.</p></div><strong id="notifications-state">Checking</strong></div><div id="notification-details" class="kv-grid"></div><div class="actions"><button type="button" id="notifications-on" class="btn-secondary" disabled>Enable notifications</button><button type="button" id="notifications-off" class="btn-secondary" disabled>Disable notifications</button><button type="button" id="notifications-test" class="btn-secondary" disabled>Send test</button></div><p class="subtle">A successful shell command does not prove Android displayed the notification. Check the notification shade after sending a test. Delivery can be unavailable on some ROMs.</p><p class="fine-print">No cloud telemetry, no automatic SQLite restoration, no action from excluded ChatGPT crash events.</p></div>
     </section>
-    <p id="message" role="status" aria-live="polite">Connecting to KernelSU…</p>
-    <footer>LSPosed Guardian · Device evidence, not causal attribution</footer>
   </main>
+  <nav class="bottom-nav" aria-label="Main navigation"><button class="active" data-tab="home" type="button"><span aria-hidden="true">⌂</span>Overview</button><button data-tab="modules" type="button"><span aria-hidden="true">▦</span>Modules</button><button data-tab="activity" type="button"><span aria-hidden="true">◷</span>Activity</button><button data-tab="review" type="button"><span aria-hidden="true">⌕</span>Review</button><button data-tab="settings" type="button"><span aria-hidden="true">⚙</span>Settings</button></nav>
+  <footer>Guardian · Local device evidence · No causal attribution</footer>
+</div>
 </body>
 </html>

@@ -582,6 +582,22 @@ exit 1
         env=self.env.copy();env['FAKE_SCOPE_FAIL']='mod.alpha'
         self.run_shell('guardian.sh','history-capture',env=env,expect=1)
         self.assertEqual(before,(self.state/'history/samples.tsv').read_bytes())
+        self.assertIn('history_last_failure_reason=vector_scope_unavailable',self.run_shell('guardian.sh','history-health'))
+        self.assertIn('history_last_failure_module=mod.alpha',self.run_shell('guardian.sh','history-health'))
+
+    def test_observation_delta_is_verified_and_not_called_a_toggle_time(self):
+        self.run_shell('guardian.sh','history-capture')
+        self.assertIn('observation_changes=INSUFFICIENT_SAMPLES',self.run_shell('guardian.sh','history-changes'))
+        self.run_shell('guardian.sh','history-capture')
+        self.assertIn('observation_changes=NONE',self.run_shell('guardian.sh','history-changes'))
+        self.mods.write_text(json.dumps({'mod.alpha': True,'mod.beta': True}))
+        self.run_shell('guardian.sh','history-capture')
+        out=self.run_shell('guardian.sh','history-changes')
+        self.assertIn('observation_changes=DETECTED',out)
+        self.assertIn('observed_change=MODULE_NOW_ENABLED|mod.beta',out)
+        idx=(self.state/'history/samples.tsv').read_text().splitlines()[-1].split('\t')[2]
+        with (self.state/'history/checkpoints'/idx).open('a') as fp:fp.write('tampered\n')
+        self.run_shell('guardian.sh','history-changes',expect=1)
 
     def test_history_second_boot_does_not_impute_first_boot_scope(self):
         self.run_shell('guardian.sh','history-capture')
@@ -798,12 +814,16 @@ exit 1
         self.assertIn('mode=OBSERVE',result)
         self.assertEqual(self.db.read_bytes(), original)
 
-    def test_webui_is_bundled_and_has_no_mutation_or_network_calls(self):
+    def test_webui_is_bundled_with_guarded_automatic_controls_and_no_network(self):
         root=ROOT/'webroot'
         for file in ('index.html','main.css','main.js'):
             self.assertTrue((root/file).is_file())
         js=(root/'main.js').read_text()
-        self.assertIn('recovery-plan ${target}',js)
+        self.assertIn('recovery-plan ',js)
+        self.assertIn('safeTarget(target)',js)
+        self.assertIn('WRITE_COMMANDS=new Set',js)
+        self.assertIn('window.confirm',js)
+        self.assertIn('automatic-off',js)
         self.assertIn('report',js)
         self.assertIn('textContent',js)
         self.assertNotIn('innerHTML',js)
@@ -812,6 +832,7 @@ exit 1
         self.assertNotIn('quarantine --apply',js)
         self.assertNotIn('restore --apply',js)
         self.assertNotIn('https://', (root/'index.html').read_text())
+        self.assertIn('Disarm all', (root/'index.html').read_text())
 
 
 if __name__=='__main__': unittest.main()

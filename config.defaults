@@ -40,3 +40,7 @@ AUTO_SAFE_MODE=0
 AUTO_QUARANTINE_POLICY=allowlist
 # Optional bounded reboot watchdog, armed only with automatic-on --apply.
 AUTO_BOOTLOOP_REBOOT=0
+
+# Optional best-effort Android shell notification transport for Guardian actions.
+# Disabled until explicitly enabled and device-side delivery is verified.
+ACTION_NOTIFICATIONS=0

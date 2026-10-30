@@ -122,3 +122,27 @@ Source-bound v0.9.4 -> v0.10.0 integrates v0.9.5 staged/active KernelSU parity a
   by this automation path.
 - **Status:** implementation complete; fake-Vector host acceptance available;
   native automatic incident and physical boot rescue not yet evidenced.
+
+| GUARD-DT-005 | OPEN / DEVICE VERIFY | KernelSU activation vs installed parity | v0.9.4 source CLI had `one-shot-finalize` but the installed v0.9.4 WebUI/CLI did not recognize it until the user rebooted; no hotfix was applied. | Distinguish `/data/adb/modules_update` pending-reboot from live module parity. Avoid recommending source file repair for staged installations. |
+| GUARD-DT-006 | OPEN / UI ACCEPTANCE | Device-side WebUI command bridge | v0.11 UI was read-only despite working `automatic-on` backend; history sampler displayed `error` without causal classification. | Add actual guarded command bridge and owner-visible scoped failure stages; verify real Android WebUI callbacks and boot activation before release qualification. |
+
+
+## GUARD-DT-017 — v0.12.0 WebUI acceptance was not feature-complete (v0.12.1)
+- **Evidence:** the provided v0.12.0 release archive implemented visual protection controls but exposed no editable crash exclusions or cooldown, rendered quarantine ledger as raw text, omitted review crash counts, and could show favorable protection state with insufficient status provenance.
+- **Fix:** v0.12.1 source-hash-bound correction with root-backed settings, authoritative status gating, typed quarantine history, structured checked Vector scopes, verified last-12 per-module observations, and explicit diagnostic failure state. Scripted WebUI, fake Vector backend, negative policy tests and rollback-to-backup updater verification added.
+- **Status:** HOST IMPLEMENTED. Android WebUI device acceptance OPEN. Build integration remains through `devtoolw install`.
+
+## GUARD-DT-018 — Background historical sampler vs manual capture state corruption (v0.12.1)
+- **Evidence:** the previous global `capture-failure-reason` is cleared by any successful capture even if the background sampler last returned `error`; UI could therefore hide the original failure stage.
+- **Fix:** background-only last-failure reason/module and last-success timestamp stored by `history-monitor.sh`. `history-health` reports both background and capture states. Manual capture does not assert a resumed monitoring daemon. Source and host tests verify preservation of the old background error.
+- **Status:** HOST IMPLEMENTED. Actual Vector/device polling failure remains OPEN; do not assert recovered.
+
+## GUARD-DT-019 — Android action notifications were missing (v0.12.1)
+- **Evidence:** v0.12.0 explicitly excluded platform notifications despite the user design including action feedback.
+- **Fix:** explicit opt-in/opt-out and test commands, fixed bounded notification messages from auto quarantine/bootloop transitions, status receipts for shell acceptance/rejection. All notification transport errors are nonfatal to durable quarantine logic.
+- **Status:** BEST-EFFORT HOST IMPLEMENTED; real Android permission, appearance and lifecycle DELIVERY OPEN. Do not label as qualified until confirmed on target ROM.
+
+## GUARD-DT-020 — WebUI configuration policy needed narrow authenticated setter (v0.12.1)
+- **Evidence:** original `personal_config_set` allowed only fixed automatic switches; adding unrestricted UI shell argument interpolation would permit untrusted package or numeric input.
+- **Fix:** strictly validated package names, safe bounded exclusion lists, protected mandatory exclusion, enumerated cooldown choices, source hashes/second-apply refusal, DOM text-only rendering and positive opt-in confirmations.
+- **Status:** HOST IMPLEMENTED; test root bridge on real KernelSU still OPEN.

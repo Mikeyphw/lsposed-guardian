@@ -1,3 +1,5 @@
+> **v0.12.1 audited WebUI hotfix:** One consolidated KernelSU WebUI redesign. See [docs/WEBUI_V012.md](docs/WEBUI_V012.md) for the protection dashboard, automatic controls, sampler diagnostics, modules, activity and rollback limitations. This update does **not** enable any automatic action during installation. See [the requirement-by-requirement audit](docs/WEBUI_V012_AUDIT.md) for delivered functions and device acceptance still open.
+
 # LSPosed Guardian v0.9.0 — consolidated isolated fault-lab and full-output WebUI
 
 Independent KernelSU/Vector safety monitor. Upgrading from v0.8 retains `/data/adb/lsposed-guardian` recovery history, the pinned legacy baseline, and the `com.openai.chatgpt` crash exclusion. **Automatic recovery is disabled and unqualified; this release never promotes legacy snapshots or silently enables module toggles.**

@@ -30,11 +30,12 @@ load_config() {
   PASSIVE_CRASH_MONITOR=1 CRASH_POLL_SECONDS=60 CRASH_WINDOW_SECONDS=300
   RECOVERY_DEVICE_QUALIFIED=0 CRASH_EXCLUDE_PACKAGES=com.openai.chatgpt
   HISTORY_MONITOR=1 HISTORY_POLL_SECONDS=180 HISTORY_MAX_AGE_SECONDS=240
-  AUTO_QUARANTINE=0 AUTO_QUARANTINE_ALLOWLIST= AUTO_QUARANTINE_POLICY=allowlist AUTO_QUARANTINE_COOLDOWN_SECONDS=43200 AUTO_SAFE_MODE=0 AUTO_BOOTLOOP_REBOOT=0
+  AUTO_QUARANTINE=0 AUTO_QUARANTINE_ALLOWLIST= AUTO_QUARANTINE_POLICY=allowlist AUTO_QUARANTINE_COOLDOWN_SECONDS=43200 AUTO_SAFE_MODE=0 AUTO_BOOTLOOP_REBOOT=0 ACTION_NOTIFICATIONS=0
   [ -f "$CFG" ] && . "$CFG"
   case "$AUTO_RECOVERY" in 0|1) : ;; *) AUTO_RECOVERY=0 ;; esac
   # Legacy unattended SQLite restore is deliberately retired. Never let its
   # persisted config flag re-enable the unsafe unjournaled restore function.
+  case "$ACTION_NOTIFICATIONS" in 0|1) : ;; *) ACTION_NOTIFICATIONS=0 ;; esac
   case "$AUTO_QUARANTINE" in 0|1) : ;; *) AUTO_QUARANTINE=0 ;; esac
   case "$AUTO_SAFE_MODE" in 0|1) : ;; *) AUTO_SAFE_MODE=0 ;; esac
   case "$AUTO_BOOTLOOP_REBOOT" in 0|1) : ;; *) AUTO_BOOTLOOP_REBOOT=0 ;; esac
@@ -63,6 +64,32 @@ load_config() {
   case "$HISTORY_MONITOR" in 0|1) : ;; *) HISTORY_MONITOR=1 ;; esac
   if ! is_number "$HISTORY_POLL_SECONDS" || [ "$HISTORY_POLL_SECONDS" -lt 60 ] || [ "$HISTORY_POLL_SECONDS" -gt 1800 ]; then HISTORY_POLL_SECONDS=180; fi
   if ! is_number "$HISTORY_MAX_AGE_SECONDS" || [ "$HISTORY_MAX_AGE_SECONDS" -lt 60 ] || [ "$HISTORY_MAX_AGE_SECONDS" -gt 1800 ]; then HISTORY_MAX_AGE_SECONDS=240; fi
+}
+
+# Android shell notification is best effort. The command returning zero proves
+# only shell acceptance, not actual delivery in every KernelSU/WebView/ROM.
+# All payloads are bounded constants or sanitized package IDs; no shell eval.
+guardian_notify() {
+  [ "$ACTION_NOTIFICATIONS" = 1 ] || return 0
+  GN_TYPE="$1" GN_TARGET="${2:-}"
+  case "$GN_TYPE" in
+    auto-quarantined|auto-quarantine-failed|vector-safe-mode|watchdog-reboot|test) : ;;
+    *) return 1 ;;
+  esac
+  case "$GN_TARGET" in *[!a-zA-Z0-9_.-]*|*..*) GN_TARGET=unknown ;; esac
+  [ "${#GN_TARGET}" -le 140 ] || GN_TARGET=unknown
+  GN_DIR="$STATE_DIR/notifications"
+  mkdir -p "$GN_DIR" || return 1
+  chmod 700 "$GN_DIR" 2>/dev/null || :
+  GN_MSG="Guardian: $GN_TYPE ${GN_TARGET}"
+  if [ -x /system/bin/cmd ] && /system/bin/cmd notification post -t 'LSPosed Guardian' guardian "$GN_MSG" >/dev/null 2>&1; then
+    write_atomic "$GN_DIR/last-result" accepted || :
+    write_atomic "$GN_DIR/last-accepted-epoch" "$(date +%s)" || :
+    return 0
+  fi
+  write_atomic "$GN_DIR/last-result" unavailable_or_rejected || :
+  write_atomic "$GN_DIR/last-failure-epoch" "$(date +%s)" || :
+  return 1
 }
 
 stamp() { date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date; }

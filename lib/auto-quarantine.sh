@@ -78,6 +78,7 @@ ag_tick_inner() {
     log AUTO "Explicitly allowlisted module $AG_MATCHED disabled after repeated scoped crashes; causality unknown"
   else
     log WARN "Automatic quarantine failed or pending reconciliation for $AG_MATCHED; no retry this boot"
+    guardian_notify auto-quarantine-failed "$AG_MATCHED" || :
   fi
 }
 ag_tick() {

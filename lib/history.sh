@@ -39,12 +39,12 @@ history_unlock() { rmdir "$HIST_DIR/.lock" 2>/dev/null || :; }
 
 history_capture() {
   history_init || return 1
-  [ ! -d "$STATE_DIR/quarantine/.lock" ] || { echo 'history_sampling_deferred=quarantine_active' >&2; return 2; }
-  mkdir "$HIST_DIR/.lock" 2>/dev/null || { echo 'history_sampling_deferred=busy' >&2; return 2; }
+  [ ! -d "$STATE_DIR/quarantine/.lock" ] || { write_atomic "$HIST_DIR/capture-failure-reason" quarantine_busy || :; echo 'history_sampling_deferred=quarantine_active' >&2; return 2; }
+  mkdir "$HIST_DIR/.lock" 2>/dev/null || { write_atomic "$HIST_DIR/capture-failure-reason" sampler_busy || :; echo 'history_sampling_deferred=busy' >&2; return 2; }
   HC_BOOT="$(boot_id | tr -cd 'a-fA-F0-9-')"
   HC_EPOCH="$(date +%s)"
   if [ -z "$HC_BOOT" ] || ! is_number "$HC_EPOCH" || ! boot_complete; then
-    history_unlock; return 1
+    write_atomic "$HIST_DIR/capture-failure-reason" boot_not_ready || :; history_unlock; return 1
   fi
   HC_BASE="$HIST_DIR/capture-$$"
   HC_ENABLED="$HC_BASE.enabled"
@@ -54,18 +54,20 @@ history_capture() {
   HC_IDX="$HC_BASE.index"
   HC_TRIM="$HC_BASE.trim"
   if ! vector_enabled_manifest "$HC_ENABLED"; then
-    history_unlock; return 1
+    write_atomic "$HIST_DIR/capture-failure-reason" inventory_unavailable || :; history_unlock; return 1
   fi
-  : > "$HC_RAW" || { rm -f "$HC_ENABLED"; history_unlock; return 1; }
+  : > "$HC_RAW" || { write_atomic "$HIST_DIR/capture-failure-reason" checkpoint_io_failed || :; rm -f "$HC_ENABLED"; history_unlock; return 1; }
   HC_FAILED=0
+  HC_REASON=checkpoint_build_failed
+  HC_BAD_MODULE=none
   while IFS= read -r HC_MOD; do
     [ -n "$HC_MOD" ] || continue
-    case "$HC_MOD" in *[!a-zA-Z0-9_.]*|''|*..*) HC_FAILED=1; break ;; esac
+    case "$HC_MOD" in *[!a-zA-Z0-9_.]*|''|*..*) HC_FAILED=1; HC_REASON=invalid_module_identifier; break ;; esac
     printf 'M\t%s\n' "$HC_MOD" >> "$HC_RAW" || { HC_FAILED=1; break; }
     if ! vector --json scope ls "$HC_MOD" > "$HC_SCOPE" 2>/dev/null ||
        ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' "$HC_SCOPE" ||
        ! history_scope_rows "$HC_SCOPE" > "$HC_BASE.rows"; then
-      HC_FAILED=1; break
+      HC_FAILED=1; HC_REASON=vector_scope_unavailable; HC_BAD_MODULE="$HC_MOD"; break
     fi
     while IFS="$(printf '\t')" read -r HC_TARGET HC_USER; do
       [ -n "$HC_TARGET" ] || continue
@@ -74,10 +76,12 @@ history_capture() {
     [ "$HC_FAILED" -eq 0 ] || break
   done < "$HC_ENABLED"
   if [ "$HC_FAILED" -ne 0 ] || ! LC_ALL=C sort -u "$HC_RAW" > "$HC_SORTED"; then
+    write_atomic "$HIST_DIR/capture-failure-reason" "$HC_REASON" || :
+    write_atomic "$HIST_DIR/capture-failure-module" "$HC_BAD_MODULE" || :
     rm -f "$HC_BASE".*; history_unlock; return 1
   fi
   HC_SHA="$(db_sha "$HC_SORTED")"
-  case "$HC_SHA" in ''|*[!a-fA-F0-9]*) rm -f "$HC_BASE".*; history_unlock; return 1 ;; esac
+  case "$HC_SHA" in ''|*[!a-fA-F0-9]*) write_atomic "$HIST_DIR/capture-failure-reason" checkpoint_hash_failed || :; rm -f "$HC_BASE".*; history_unlock; return 1 ;; esac
   HC_FILE="$HC_BOOT-$HC_EPOCH-$$.tsv"
   HC_COUNT_M="$(awk -F '\t' '$1=="M"{n++} END{print n+0}' "$HC_SORTED")"
   HC_COUNT_S="$(awk -F '\t' '$1=="S"{n++} END{print n+0}' "$HC_SORTED")"
@@ -85,6 +89,7 @@ history_capture() {
      ! { cat "$HIST_INDEX"; printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$HC_BOOT" "$HC_EPOCH" "$HC_FILE" "$HC_SHA" "$HC_COUNT_M" "$HC_COUNT_S"; } > "$HC_IDX" ||
      ! tail -n "$HISTORY_MAX_SAMPLES" "$HC_IDX" > "$HC_TRIM" ||
      ! mv "$HC_TRIM" "$HIST_INDEX"; then
+    write_atomic "$HIST_DIR/capture-failure-reason" checkpoint_commit_failed || :
     rm -f "$HC_BASE".*; history_unlock; return 1
   fi
   chmod 600 "$HIST_CHECKPOINTS/$HC_FILE" "$HIST_INDEX" 2>/dev/null || :
@@ -95,6 +100,9 @@ history_capture() {
     awk -F '\t' -v name="$HC_NAME" '$3==name{found=1} END{exit !found}' "$HIST_INDEX" || rm -f "$HC_OLD"
   done
   rm -f "$HC_BASE".*
+  write_atomic "$HIST_DIR/capture-failure-reason" none || :
+  write_atomic "$HIST_DIR/capture-failure-module" none || :
+  write_atomic "$HIST_DIR/last-success-epoch" "$HC_EPOCH" || :
   history_unlock
   return 0
 }
@@ -104,6 +112,61 @@ history_recent() {
   echo 'Historical Vector observations (timestamps are sampling times, not change times):'
   if [ ! -s "$HIST_INDEX" ]; then echo '  No recorded checkpoints'; return 0; fi
   tail -n 12 "$HIST_INDEX" | awk -F '\t' 'NF==6 {printf "  boot=%s sampled_epoch=%s enabled=%s scoped_rows=%s sha256=%s\n",$1,$2,$5,$6,$4}'
+}
+
+# Read-only, checksum-verified module-specific sampling history (12 newest entries).
+# No changes are inferred between samples and malformed checkpoints fail closed.
+history_module_observations() {
+  HMO_PKG="$1"
+  history_init || return 1
+  HMO_OUT="$HIST_DIR/module-observations-$$"
+  : > "$HMO_OUT" || return 1
+  while IFS="$(printf '\t')" read -r HMO_BOOT HMO_EPOCH HMO_FILE HMO_SHA HMO_M HMO_S; do
+    [ -n "$HMO_FILE" ] || continue
+    case "$HMO_FILE" in ''|*[!a-zA-Z0-9_.-]*|*..*) rm -f "$HMO_OUT";return 1;; esac
+    case "$HMO_SHA" in ''|*[!a-fA-F0-9]*) rm -f "$HMO_OUT";return 1;; esac
+    is_number "$HMO_EPOCH" || { rm -f "$HMO_OUT";return 1; }
+    HMO_PATH="$HIST_CHECKPOINTS/$HMO_FILE"
+    [ -f "$HMO_PATH" ] && [ "$(db_sha "$HMO_PATH")" = "$HMO_SHA" ] || { rm -f "$HMO_OUT";return 1; }
+    HMO_RESULT="$(awk -F '\t' -v p="$HMO_PKG" '
+      $1=="M" && $2==p {en=1}
+      $1=="S" && $2==p {n++}
+      END {printf "%d|%d", en+0,n+0}' "$HMO_PATH")" || { rm -f "$HMO_OUT";return 1; }
+    printf 'module_observation=%s|%s\n' "$HMO_EPOCH" "$HMO_RESULT" >> "$HMO_OUT" || { rm -f "$HMO_OUT";return 1; }
+  done <<EOF_HMO
+$(tail -n 12 "$HIST_INDEX")
+EOF_HMO
+  cat "$HMO_OUT";rm -f "$HMO_OUT"
+}
+
+# Compare verified neighboring OBSERVATIONS, not inferred module-toggle times.
+# This command is read-only and never reconstructs missing historical data.
+history_changes() {
+  history_init || return 1
+  CH_NUM="$(wc -l < "$HIST_INDEX" | tr -d ' ')"
+  is_number "$CH_NUM" && [ "$CH_NUM" -ge 2 ] || { echo 'observation_changes=INSUFFICIENT_SAMPLES'; return 0; }
+  CH_PREV="$(tail -n 2 "$HIST_INDEX" | head -n 1)"
+  CH_CUR="$(tail -n 1 "$HIST_INDEX")"
+  CH_OLD_FILE="$(printf '%s\n' "$CH_PREV" | cut -f3)"
+  CH_NEW_FILE="$(printf '%s\n' "$CH_CUR" | cut -f3)"
+  CH_OLD_SHA="$(printf '%s\n' "$CH_PREV" | cut -f4)"
+  CH_NEW_SHA="$(printf '%s\n' "$CH_CUR" | cut -f4)"
+  case "$CH_OLD_FILE:$CH_NEW_FILE" in *[!a-zA-Z0-9_.:-]*|*..*|'') echo 'observation_changes=INVALID_INDEX'; return 1 ;; esac
+  case "$CH_OLD_SHA$CH_NEW_SHA" in *[!a-fA-F0-9]*|'') echo 'observation_changes=INVALID_HASH'; return 1 ;; esac
+  CH_OLD="$HIST_CHECKPOINTS/$CH_OLD_FILE" CH_NEW="$HIST_CHECKPOINTS/$CH_NEW_FILE"
+  [ -f "$CH_OLD" ] && [ -f "$CH_NEW" ] &&
+    [ "$(db_sha "$CH_OLD")" = "$CH_OLD_SHA" ] &&
+    [ "$(db_sha "$CH_NEW")" = "$CH_NEW_SHA" ] || { echo 'observation_changes=UNVERIFIED_CHECKPOINT'; return 1; }
+  printf 'interval_start_epoch=%s\n' "$(printf '%s\n' "$CH_PREV" | cut -f2)"
+  printf 'interval_end_epoch=%s\n' "$(printf '%s\n' "$CH_CUR" | cut -f2)"
+  if [ "$CH_OLD_SHA" = "$CH_NEW_SHA" ]; then echo 'observation_changes=NONE'; return 0; fi
+  echo 'observation_changes=DETECTED'
+  LC_ALL=C comm -23 "$CH_OLD" "$CH_NEW" | awk -F '\t' '
+    $1=="M" {printf "observed_change=MODULE_NO_LONGER_ENABLED|%s\n",$2}
+    $1=="S" {printf "observed_change=SCOPE_NO_LONGER_PRESENT|%s|%s|%s\n",$2,$3,$4}'
+  LC_ALL=C comm -13 "$CH_OLD" "$CH_NEW" | awk -F '\t' '
+    $1=="M" {printf "observed_change=MODULE_NOW_ENABLED|%s\n",$2}
+    $1=="S" {printf "observed_change=SCOPE_NOW_PRESENT|%s|%s|%s\n",$2,$3,$4}'
 }
 
 history_sample_for_event() {
@@ -127,7 +190,7 @@ history_decision() {
   HD_BASE="$HIST_DIR/decision-$$"
   HD_EVENTS="$HD_BASE.events"
   HD_NOW="$(date +%s)"
-  [ -s "$CRASH_FILE" ] || { echo 'decision=INSUFFICIENT_CRASH_EVIDENCE'; echo 'automatic_action=disabled'; return 0; }
+  [ -s "$CRASH_FILE" ] || { echo 'recent_crash_count=0'; echo 'distinct_process_count=0'; echo 'decision=INSUFFICIENT_CRASH_EVIDENCE'; echo 'automatic_action=disabled'; return 0; }
   awk -F '\t' -v p="$HD_TARGET" -v now="$HD_NOW" -v window="$CRASH_WINDOW_SECONDS" '
     NF==4 && ($3==p || index($3,p ":")==1) && $2+0 >= now-window && $2+0 <= now+10 {print $1 "\t" $2 "\t" $4}
   ' "$CRASH_FILE" > "$HD_EVENTS" || return 1
@@ -138,6 +201,7 @@ history_decision() {
     rm -f "$HD_EVENTS"; return 0
   fi
   HD_UNIQUE_PIDS="$(cut -f3 "$HD_EVENTS" | sort -u | wc -l | tr -d ' ')"
+  printf 'distinct_process_count=%s\n' "$HD_UNIQUE_PIDS"
   if [ "$HD_UNIQUE_PIDS" -lt 2 ]; then
     echo 'decision=INSUFFICIENT_DISTINCT_PROCESSES'; echo 'automatic_action=disabled'
     rm -f "$HD_EVENTS"; return 0
@@ -185,6 +249,7 @@ history_decision() {
     fi
   fi
   printf 'decision=%s\n' "$HD_RESULT"
+  case "${HD_N:-}" in ''|*[!0-9]*) : ;; *) printf 'last_matched_scope_count=%s\n' "$HD_N" ;; esac
   if [ "$HD_RESULT" = REVIEW_SINGLE_SCOPED_MODULE ]; then
     printf 'candidate_for_manual_review=%s\n' "$HD_CANDIDATE"
     echo 'causality=NOT_ESTABLISHED'
@@ -211,5 +276,16 @@ history_health() {
   printf 'history_last_poll_epoch=%s\n' "$(read_first "$HIST_DIR/last-epoch")"
   printf 'history_last_poll_result=%s\n' "$(read_first "$HIST_DIR/last-result")"
   printf 'history_last_error_epoch=%s\n' "$(read_first "$HIST_DIR/last-error-epoch")"
+  HR_REASON="$(read_first "$HIST_DIR/last-background-failure-reason")"
+  [ -n "$HR_REASON" ] || HR_REASON="$(read_first "$HIST_DIR/capture-failure-reason")"
+  case "$HR_REASON" in none|init_failed|quarantine_busy|sampler_busy|boot_not_ready|inventory_unavailable|invalid_module_identifier|vector_scope_unavailable|checkpoint_build_failed|checkpoint_io_failed|checkpoint_hash_failed|checkpoint_commit_failed) : ;; *) HR_REASON=unknown ;; esac
+  printf 'history_last_failure_reason=%s\n' "$HR_REASON"
+  HR_MODULE="$(read_first "$HIST_DIR/last-background-failure-module")"
+  [ -n "$HR_MODULE" ] || HR_MODULE="$(read_first "$HIST_DIR/capture-failure-module")"
+  case "$HR_MODULE" in ''|*[!a-zA-Z0-9_.]*|*..*) HR_MODULE=none ;; esac
+  printf 'history_last_failure_module=%s\n' "$HR_MODULE"
+  printf 'history_last_success_epoch=%s\n' "$(read_first "$HIST_DIR/last-success-epoch")"
+  printf 'history_last_background_success_epoch=%s\n' "$(read_first "$HIST_DIR/last-background-success-epoch")"
+  printf 'history_manual_or_background_capture_reason=%s\n' "$(read_first "$HIST_DIR/capture-failure-reason")"
   echo 'note=Historical timestamps are observations, not module activation times'
 }

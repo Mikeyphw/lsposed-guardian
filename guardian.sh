@@ -25,6 +25,8 @@ Usage: guardian.sh COMMAND [ARGS]
   report            Emit machine-readable JSON diagnostic evidence
   doctor            Diagnose boot recovery, Vector CLI, backup and AshLooper
   modules           List enabled/disabled modules using Vector CLI
+  scope-structured PKG  Validate and list structured Vector scope targets
+  history-module PKG     Verify last 12 samples for one installed module
   suspects APP      List active modules with APP in their scope (read-only)
   crashes           Show crash-buffer process counts (read-only)
   collect           Capture bounded read-only crash event history now
@@ -38,6 +40,7 @@ Usage: guardian.sh COMMAND [ARGS]
   assess APP        Read-only crash history + current scope candidates + baseline delta
   history           Show last 12 sampled Vector config checkpoints
   history-health    Show latest historical sampler heartbeat
+  history-changes   Show differences between last 2 VERIFIED observations
   history-capture   Take a timestamped read-only enabled-module/scope checkpoint
   decision APP      Conservative historical crash correlation; never toggles modules
   recovery-plan APP Review-only escalation plan; never toggles modules
@@ -78,6 +81,13 @@ Usage: guardian.sh COMMAND [ARGS]
   safe-mode-arm --apply Enable no-DB-write bootloop fallback for next hardware boot
   safe-mode-disarm      Disable bootloop fallback (does not re-enable Vector)
   safe-mode-status      Show bootloop fallback and Vector marker
+  exclusion-add PKG --apply  Ignore crashes from one Android package
+  exclusion-remove PKG --apply  Remove an optional crash exclusion
+  cooldown-set SECONDS --apply  Set automatic quarantine cooldown (1h..7d)
+  notifications-on --apply   Opt in to best-effort Android action notifications
+  notifications-off         Disable new Android action notifications
+  notifications-status      Inspect transport and last acceptance/error
+  notifications-test --apply  Send one explicit Android delivery test
   arm               Legacy unsafe auto SQLite restore retired (refused)
   disarm            Observe only; never automatically restore
   restore --apply   Queue known-good database restore for the NEXT hardware boot
@@ -108,7 +118,7 @@ set_auto() {
 
 personal_config_set() {
   PCS_KEY="$1" PCS_VALUE="$2"
-  case "$PCS_KEY" in AUTO_QUARANTINE|AUTO_QUARANTINE_ALLOWLIST|AUTO_QUARANTINE_POLICY|AUTO_SAFE_MODE|AUTO_BOOTLOOP_REBOOT) : ;; *) return 1;; esac
+  case "$PCS_KEY" in AUTO_QUARANTINE|AUTO_QUARANTINE_ALLOWLIST|AUTO_QUARANTINE_POLICY|AUTO_SAFE_MODE|AUTO_BOOTLOOP_REBOOT|AUTO_QUARANTINE_COOLDOWN_SECONDS|CRASH_EXCLUDE_PACKAGES|ACTION_NOTIFICATIONS) : ;; *) return 1;; esac
   case "$PCS_VALUE" in *[!a-zA-Z0-9_.,]*) return 1;; esac
   PCS_TEMP="$CFG.personal.$$"
   # Rewrite a known key or append it. No eval, no shell metacharacters.
@@ -280,6 +290,7 @@ case "${1:-help}" in
     recovery_plan "$2" ;;
 
   history) history_recent ;;
+  history-changes) history_changes ;;
   history-health) history_health ;;
   history-capture)
     history_capture && echo 'history_capture=ok (read-only Vector sampling)' || { echo 'history_capture=failed' >&2; exit 1; }
@@ -352,6 +363,28 @@ case "${1:-help}" in
     q_reconcile "$2" ;;
 
   modules) vector modules ls ;;
+  scope-structured)
+    check_pkg "${2:-}" || exit 2
+    [ -z "${3:-}" ] || exit 2
+    SI_BASE="$HIST_DIR/inspect-$$"
+    history_init || exit 1
+    if ! vector --json scope ls "$2" > "$SI_BASE.json" 2>/dev/null ||
+       ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' "$SI_BASE.json" ||
+       ! history_scope_rows "$SI_BASE.json" > "$SI_BASE.rows"; then
+      rm -f "$SI_BASE.json" "$SI_BASE.rows"
+      echo 'Structured scope inspection unavailable' >&2; exit 1
+    fi
+    SI_TOTAL="$(wc -l < "$SI_BASE.rows" | tr -d ' ')"
+    is_number "$SI_TOTAL" || { rm -f "$SI_BASE.json" "$SI_BASE.rows"; exit 1; }
+    printf 'scope_count=%s\n' "$SI_TOTAL"
+    while IFS="$(printf '\t')" read -r SI_PKG SI_UID; do
+      printf 'scope=%s|%s\n' "$SI_PKG" "$SI_UID"
+    done < "$SI_BASE.rows"
+    rm -f "$SI_BASE.json" "$SI_BASE.rows" ;;
+  history-module)
+    check_pkg "${2:-}" || exit 2
+    [ -z "${3:-}" ] || exit 2
+    history_module_observations "$2" ;;
   selftest)
     sh "$MODDIR/selftest.sh"
     ;;
@@ -464,7 +497,12 @@ case "${1:-help}" in
     ag_status
     sm_status
     echo "auto_bootloop_reboot=$AUTO_BOOTLOOP_REBOOT"
+    echo "crash_exclude_packages=$CRASH_EXCLUDE_PACKAGES"
+    echo "collector_monitor_enabled=$PASSIVE_CRASH_MONITOR"
+    echo "history_monitor_enabled=$HISTORY_MONITOR"
+    echo "last_stable_boot_id=$(read_first "$BOOT_DIR/last-success-id")"
     echo "watchdog_reboot_count=$(read_first "$BOOT_DIR/auto-reboot-count")"
+    echo "notifications_enabled=$ACTION_NOTIFICATIONS"
     echo 'legacy_unjournaled_sqlite_restore=DISABLED'
     ;;
   auto-allow|auto-deny)
@@ -516,6 +554,51 @@ case "${1:-help}" in
     personal_config_set AUTO_SAFE_MODE 0 || exit 1
     echo 'AUTO_SAFE_MODE=0; any existing Vector disable marker is preserved' ;;
   safe-mode-status) sm_status ;;
+  exclusion-add|exclusion-remove)
+    [ "${3:-}" = --apply ] && [ -z "${4:-}" ] || { echo 'Requires PKG --apply' >&2; exit 2; }
+    check_pkg "${2:-}" || exit 2
+    case "$2" in lspd|android|com.android.systemui|system_server) echo 'Protected package cannot be edited' >&2; exit 2;; esac
+    if [ "$1" = exclusion-remove ] && [ "$2" = com.openai.chatgpt ]; then
+      echo 'Mandatory ChatGPT crash exclusion cannot be removed' >&2; exit 2
+    fi
+    EX_EDIT=''
+    EX_OLDIFS="$IFS"; IFS=,
+    for EX_ITEM in $CRASH_EXCLUDE_PACKAGES; do
+      [ -n "$EX_ITEM" ] || continue
+      [ "$EX_ITEM" != "$2" ] || continue
+      EX_EDIT="${EX_EDIT:+$EX_EDIT,}$EX_ITEM"
+    done
+    IFS="$EX_OLDIFS"
+    if [ "$1" = exclusion-add ]; then EX_EDIT="${EX_EDIT:+$EX_EDIT,}$2"; fi
+    [ "${#EX_EDIT}" -le 2048 ] || { echo 'Too many exclusions' >&2; exit 2; }
+    personal_config_set CRASH_EXCLUDE_PACKAGES "$EX_EDIT" || exit 1
+    echo "crash_exclude_packages=$EX_EDIT" ;;
+  notifications-on)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || exit 2
+    personal_config_set ACTION_NOTIFICATIONS 1 || exit 1
+    echo 'notifications_enabled=1; transport_delivery_unverified=true' ;;
+  notifications-off)
+    [ -z "${2:-}" ] || exit 2
+    personal_config_set ACTION_NOTIFICATIONS 0 || exit 1
+    echo 'notifications_enabled=0' ;;
+  notifications-status)
+    [ -z "${2:-}" ] || exit 2
+    echo "notifications_enabled=$ACTION_NOTIFICATIONS"
+    echo "notifications_transport=$([ -x /system/bin/cmd ] && echo present_unverified || echo unavailable)"
+    echo "notifications_last_result=$(read_first "$STATE_DIR/notifications/last-result")"
+    echo "notifications_last_accepted_epoch=$(read_first "$STATE_DIR/notifications/last-accepted-epoch")"
+    echo "notifications_last_failure_epoch=$(read_first "$STATE_DIR/notifications/last-failure-epoch")"
+    echo 'delivery_confirmation=NOT_AVAILABLE_FROM_SHELL' ;;
+  notifications-test)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || exit 2
+    [ "$ACTION_NOTIFICATIONS" = 1 ] || { echo 'First enable notifications in Settings' >&2; exit 1; }
+    guardian_notify test || { echo 'Android notification transport unavailable or rejected; check notifications-status' >&2; exit 1; }
+    echo 'Shell accepted test notification; confirm manually in Android notification shade' ;;
+  cooldown-set)
+    [ "${3:-}" = --apply ] && [ -z "${4:-}" ] || { echo 'Requires SECONDS --apply' >&2; exit 2; }
+    case "${2:-}" in 3600|10800|21600|43200|86400|172800|604800) : ;; *) echo 'Unsupported cooldown; choose 1, 3, 6, 12, 24, 48 or 168 hours' >&2; exit 2;; esac
+    personal_config_set AUTO_QUARANTINE_COOLDOWN_SECONDS "$2" || exit 1
+    echo "cooldown_seconds=$2" ;;
   arm)
     echo 'Legacy unjournaled automatic SQLite restore retired. Use safe-mode-arm or manually staged one-shot.' >&2
     exit 1
