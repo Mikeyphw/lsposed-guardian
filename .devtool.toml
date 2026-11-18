@@ -194,7 +194,7 @@ runner = "command"
 command = ["python3", "tools/qualify_host.py"]
 inputs = ["dist/host-test-results.json", "tests/test_guardian.py", "tools/qualify_host.py", ".devtool.toml"]
 outputs = ["dist/host-qualification.json"]
-metadata = { read_only = true, host_evidence_gate = true, device_qualified = false }
+metadata = { read_only = false, host_evidence_gate = true, device_qualified = false }
 
 [targets.guardian.jobs.package]
 runner = "command"
@@ -289,7 +289,7 @@ runner = "command"
 command = ["python3", "tools/early_boot_transaction_lab.py"]
 inputs = ["tools/early_boot_transaction_lab.py", "tests/test_early_boot_transaction_lab.py"]
 outputs = ["dist/early-boot-prototype-lab.json"]
-metadata = { read_only = true, isolated = true, device_qualified = false, production_restore_modified = false }
+metadata = { read_only = false, isolated = true, device_qualified = false, production_restore_modified = false }
 
 [targets.guardian.jobs.early-boot-inventory]
 runner = "command"
