@@ -1,3 +1,5 @@
+> **v0.12.4 host implementation (not device-qualified):** Adds corroborated FallbackHome/keyguard and process-start failure observations, independently opt-in single-module quarantine plus one Zygote restart, runtime capability-based support for future Vector versions, and an optional verified manual-only SQLite backup vault. None is automatically armed on upgrade; live DB restore remains blocked. [Safety contract and device limits](docs/ROADMAP.md).
+
 > **v0.12.2 post-boot soft-lock guard:** Guardian now recognizes a sustained visible Android boot-progress window after framework boot completion, with a separate opt-in, one-shot Vector rescue and WebUI control. [Scope, risks and device acceptance](docs/SOFTLOCK_V0122.md). Detection runs without enabling an automatic reboot.
 
 > **v0.12.1 audited WebUI hotfix:** One consolidated KernelSU WebUI redesign. See [docs/WEBUI_V012.md](docs/WEBUI_V012.md) for the protection dashboard, automatic controls, sampler diagnostics, modules, activity and rollback limitations. This update does **not** enable any automatic action during installation. See [the requirement-by-requirement audit](docs/WEBUI_V012_AUDIT.md) for delivered functions and device acceptance still open.
@@ -85,3 +87,50 @@ Stop future actions with `automatic-off`. See
 No unattended SQLite restore. If AshReXcue is installed, it remains responsible
 for platform-wide bootloop decisions; Guardian does not run a competing
 KernelSU reboot or Vector disable mechanism.
+
+## v0.12.3 packaging correction
+
+Fixes a v0.12.2 install ZIP omission of `lib/softlock.sh`; verifies all static runtime shell imports during source validation and package verification and checks the file during runtime parity. See `docs/ROADMAP.md`.
+
+### Audited v0.12.4 feature boundary
+
+The optional manual backup vault provides SHA-verified, same-second-versioned
+snapshots, bounded regular config files alongside Vector's consistent DB,
+retention (1–20), numbered terminal menu, explicit SHA-pinned fzf/bat opt-in,
+module lists, comparison and WebUI inspection. It never installs a scheduler
+or restores the live database. See
+`docs/ROADMAP.md` for the precise device and
+recovery limitations. The post-boot observer preserves a distinct
+process-stable/UI-unverified result on unsupported ROMs.
+
+
+### Termux native host qualification (v0.12.4)
+
+The source-bound required artifact validator runs every current Python test,
+WebUI regression, ZIP build/verification and the early-boot laboratory. It
+uses the existing `tools/run_host_tests.py --workers 2 --timeout 180` and
+`tools/qualify_host.py` for the 71 original core tests, preserving source
+provenance and independent test receipts. To accommodate Termux subprocess
+startup latency, backup-vault and one-shot suites are split into bounded
+subprocess groups using exact dynamic unittest discovery; each test is
+executed exactly once. Two independent host lanes reduce wall-clock time.
+Missing tests, failed/empty discovery, timeouts, code failures and incomplete
+source qualification remain fatal. The policy never runs Android-device
+operations and never relaxes SQLite restore safety.
+
+### Devtool native executable overlay and validation scopes (v0.12.4)
+
+Guardian's source-bound Devtool executable-overlay v2 `.pyz` uses Devtool's
+canonical checksum-pinned bootstrap and requires native validation before an
+atomic source commit. Its **Termux validation is deliberately targeted**:
+selected Vector compatibility, softlock fail-closed, selective rescue, manual
+vault, one-shot/boot denial, security and CI coverage contracts, plus source,
+WebUI, package build, archive verification and isolated boot laboratory.
+This is not the full repository regression or device qualification.
+
+The full Python suite remains mandatory for hosted pull-request and release
+candidate workflows: preexisting core, automation, one-shot, boot trial,
+parity and contract jobs plus Vector compatibility, softlock, extended
+softlock, backup vault and boot probe suites. Missing or failing CI is not
+qualified. Real Vector/Android actions remain a separate explicitly approved
+device gate; no auto-root install, restore, reboot, merge or release occurs.

@@ -48,6 +48,15 @@ class ParityContinuityTests(unittest.TestCase):
     self.stage('modules/lsposed_guardian',{'guardian.sh':b'old'})
     self.stage('modules_update/lsposed_guardian',{'lib/one-shot.sh':b'bad'})
     self.check('UNEXPECTED_RUNTIME_DRIFT',False)
+ def test_missing_softlock_library_detected(self):
+    self.stage('modules/lsposed_guardian',{'lib/softlock.sh':None})
+    r=self.check('UNEXPECTED_RUNTIME_DRIFT',False)
+    self.assertIn('lib/softlock.sh',r['active_drift'])
+ def test_missing_softlock_library_in_staged_update_detected(self):
+    self.stage('modules/lsposed_guardian',{'guardian.sh':b'older'})
+    self.stage('modules_update/lsposed_guardian',{'lib/softlock.sh':None})
+    r=self.check('UNEXPECTED_RUNTIME_DRIFT',False)
+    self.assertIn('lib/softlock.sh',r['staged_drift'])
  def test_missing_critical_cli_detected(self):
     self.stage('modules/lsposed_guardian',{'lib/crash.sh':None})
     r=self.check('UNEXPECTED_RUNTIME_DRIFT',False)

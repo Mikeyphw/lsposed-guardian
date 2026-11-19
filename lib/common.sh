@@ -32,6 +32,8 @@ load_config() {
   HISTORY_MONITOR=1 HISTORY_POLL_SECONDS=180 HISTORY_MAX_AGE_SECONDS=240
   AUTO_QUARANTINE=0 AUTO_QUARANTINE_ALLOWLIST= AUTO_QUARANTINE_POLICY=allowlist AUTO_QUARANTINE_COOLDOWN_SECONDS=43200 AUTO_SAFE_MODE=0 AUTO_BOOTLOOP_REBOOT=0 ACTION_NOTIFICATIONS=0
   SOFTLOCK_MONITOR=1 SOFTLOCK_GRACE_SECONDS=180 AUTO_SOFTLOCK=0
+  SOFTLOCK_SELECTIVE=0 SOFTLOCK_ZYGOTE_RESTART=0 SOFTLOCK_SUSPECT=
+  BACKUP_VAULT_ENABLED=0 BACKUP_VAULT_LIMIT=5
   [ -f "$CFG" ] && . "$CFG"
   case "$AUTO_RECOVERY" in 0|1) : ;; *) AUTO_RECOVERY=0 ;; esac
   # Legacy unattended SQLite restore is deliberately retired. Never let its
@@ -39,6 +41,15 @@ load_config() {
   case "$ACTION_NOTIFICATIONS" in 0|1) : ;; *) ACTION_NOTIFICATIONS=0 ;; esac
   case "$SOFTLOCK_MONITOR" in 0|1) : ;; *) SOFTLOCK_MONITOR=0 ;; esac
   case "$AUTO_SOFTLOCK" in 0|1) : ;; *) AUTO_SOFTLOCK=0 ;; esac
+  case "$BACKUP_VAULT_ENABLED" in 0|1) : ;; *) BACKUP_VAULT_ENABLED=0 ;; esac
+  if ! is_number "$BACKUP_VAULT_LIMIT" || [ "$BACKUP_VAULT_LIMIT" -lt 1 ] || [ "$BACKUP_VAULT_LIMIT" -gt 20 ]; then BACKUP_VAULT_LIMIT=5; fi
+  case "$SOFTLOCK_SELECTIVE" in 0|1) : ;; *) SOFTLOCK_SELECTIVE=0 ;; esac
+  case "$SOFTLOCK_ZYGOTE_RESTART" in 0|1) : ;; *) SOFTLOCK_ZYGOTE_RESTART=0 ;; esac
+  case "$SOFTLOCK_SUSPECT" in
+    ''|.*|*..*|*[!a-zA-Z0-9_.]*|com.android.*|android.*|lspd) SOFTLOCK_SELECTIVE=0; SOFTLOCK_SUSPECT= ;;
+    *.*) : ;;
+    *) SOFTLOCK_SELECTIVE=0; SOFTLOCK_SUSPECT= ;;
+  esac
   if ! is_number "$SOFTLOCK_GRACE_SECONDS" || [ "$SOFTLOCK_GRACE_SECONDS" -lt 120 ] || [ "$SOFTLOCK_GRACE_SECONDS" -gt 600 ]; then SOFTLOCK_GRACE_SECONDS=180; fi
   case "$AUTO_QUARANTINE" in 0|1) : ;; *) AUTO_QUARANTINE=0 ;; esac
   case "$AUTO_SAFE_MODE" in 0|1) : ;; *) AUTO_SAFE_MODE=0 ;; esac
@@ -140,6 +151,20 @@ boot_id() { [ -r "$BOOT_ID_PATH" ] && read_first "$BOOT_ID_PATH"; }
 boot_complete() { [ "$(getprop sys.boot_completed 2>/dev/null)" = "1" ]; }
 cli_ready() { [ -f "$VECTOR_CLI" ] && [ -x "$VECTOR_CLI" ]; }
 vector() { cli_ready || return 127; "$VECTOR_CLI" "$@"; }
+# Bounded daemon calls prevent an unresponsive Vector CLI from hanging the
+# soft-lock watchdog. 125 means timeout support is absent (not success).
+vector_bounded() {
+  VB_SECS="$1"; shift
+  cli_ready || return 127
+  case "$VB_SECS" in ''|*[!0-9]*) return 125 ;; esac
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$VB_SECS" "$VECTOR_CLI" "$@"
+  elif command -v toybox >/dev/null 2>&1 && toybox timeout 1 true >/dev/null 2>&1; then
+    toybox timeout "$VB_SECS" "$VECTOR_CLI" "$@"
+  else
+    return 125
+  fi
+}
 vector_version_code() {
   [ -r "$VECTOR_PROP" ] || return 1
   sed -n 's/^versionCode=\([0-9][0-9]*\)$/\1/p' "$VECTOR_PROP" | head -n 1
@@ -220,10 +245,17 @@ offline_restore() {
 vector_enabled_manifest() {
   VEM_DEST="$1"
   VEM_JSON="$VEM_DEST.json.$$"
-  if ! vector --json modules ls -e > "$VEM_JSON" 2>/dev/null ||
-     ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' "$VEM_JSON"; then
+  if ! vector_bounded 8 --json modules ls -e > "$VEM_JSON" 2>/dev/null ||
+     ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' "$VEM_JSON" ||
+     ! grep -Eq '"data"[[:space:]]*:[[:space:]]*\[' "$VEM_JSON"; then
     rm -f "$VEM_JSON"
     return 1
+  fi
+  VEM_PKG="$(grep -Ec '"PACKAGE"[[:space:]]*:[[:space:]]*"[a-zA-Z0-9_.]+"' "$VEM_JSON" || :)"
+  VEM_STATUS="$(grep -Ec '"STATUS"[[:space:]]*:[[:space:]]*"enabled"' "$VEM_JSON" || :)"
+  [ "$VEM_PKG" = "$VEM_STATUS" ] || { rm -f "$VEM_JSON"; return 1; }
+  if [ "$VEM_PKG" = 0 ]; then
+    grep -Eq '"data"[[:space:]]*:[[:space:]]*\[[[:space:]]*\]' "$VEM_JSON" || { rm -f "$VEM_JSON"; return 1; }
   fi
   if ! sed -n 's/.*"PACKAGE"[[:space:]]*:[[:space:]]*"\([a-zA-Z0-9_.]*\)".*/\1/p' "$VEM_JSON" | grep -v '^lspd$' | LC_ALL=C sort -u > "$VEM_DEST"; then
     rm -f "$VEM_JSON" "$VEM_DEST"

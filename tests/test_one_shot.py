@@ -32,6 +32,10 @@ class OnceOnlyTests(unittest.TestCase):
         self.bin=self.d/'bin';self.bin.mkdir()
         def mk(name, body):
             p=self.bin/name;p.write_text('#!/bin/sh\n'+body+'\n');p.chmod(0o755)
+        mk('dumpsys', '''case "$1" in
+  window) echo '  Window #0 Window{123 u0 Normal}:'; echo '    mAttrs=WM.LayoutParams{ty=1}'; echo '    isOnScreen=true' ;;
+  activity) echo 'topResumedActivity=ActivityRecord{123 u0 com.android.launcher/.Launcher t1}' ;;
+esac''')
         mk('getprop','if [ "$1" = sys.boot_completed ]; then echo "${MOCK_BOOTED:-1}"; fi')
         mk('pidof','if [ "$1" = vectord ]; then [ "${MOCK_DAEMON:-0}" = 1 ] && echo 1001; exit 0; fi; if [ "$1" = com.android.systemui ]; then echo 333; fi')
         mk('ls','if [ "$1" = -Z ]; then echo "-rw-rw---- 1 root root u:object_r:system_file:s0 sample"; exit 0; fi; exec /bin/ls "$@"')
@@ -65,7 +69,7 @@ except Exception as exc:
 """)
         sql.chmod(0o755)
         mk('vectorcli', '''if [ "$1" = status ]; then echo 'Vector ready'; exit 0; fi
-if [ "$1" = --json ] && [ "$2" = modules ] && [ "$3" = ls ]; then echo '{"success": true, "data": [{"PACKAGE": "eu.hxreborn.remembermysort"}]}'; exit 0; fi
+if [ "$1" = --json ] && [ "$2" = modules ] && [ "$3" = ls ]; then echo '{"success": true, "data": [{"PACKAGE": "eu.hxreborn.remembermysort", "STATUS": "enabled"}]}'; exit 0; fi
 if [ "$1" = db ] && [ "$2" = backup ]; then cp "$GUARDIAN_VECTOR_DB" "$3"; exit 0; fi
 exit 1''')
         self.prop=self.d/'module.prop';self.prop.write_text('id=zygisk_vector\nversionCode=3112\n')

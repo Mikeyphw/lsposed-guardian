@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
@@ -14,13 +15,29 @@ INSTALL = [
  'module.prop','config.defaults','customize.sh','action.sh','guardian.sh',
  'post-fs-data.sh','service.sh','one-shot-offline-undo.sh','crash-monitor.sh','history-monitor.sh','selftest.sh','uninstall.sh',
  'lib/common.sh','lib/crash.sh','lib/history.sh','lib/quarantine.sh',
- 'lib/recovery-lab.sh','lib/quarantine-lab.sh','lib/qualification.sh','lib/policy.sh','lib/boot-probe.sh','lib/boot-trial.sh','lib/one-shot.sh','lib/auto-quarantine.sh','lib/safe-mode.sh',
+ 'lib/recovery-lab.sh','lib/quarantine-lab.sh','lib/qualification.sh','lib/policy.sh','lib/boot-probe.sh','lib/boot-trial.sh','lib/one-shot.sh','lib/auto-quarantine.sh','lib/safe-mode.sh','lib/softlock.sh','lib/vector-compat.sh','lib/backup-vault.sh',
  'webroot/index.html','webroot/main.css','webroot/main.js','README.md','docs/ROADMAP.md',
 ]
 EXECUTABLE={'customize.sh','action.sh','guardian.sh','post-fs-data.sh','service.sh','one-shot-offline-undo.sh',
  'crash-monitor.sh','history-monitor.sh','selftest.sh','uninstall.sh'}
 SKIP_DIRS={'.git','.devtool','.venv','dist','__pycache__','.pytest_cache','device-evidence'}
 SKIP_FILES={'.DS_Store','.devtool-wrapper.lock'}
+# Every static module-library source statement must have an install ZIP entry.
+# Guard future library additions; an import missing from the package is a
+# boot-service/CLI outage, not an optional feature.
+SOURCE_LIB = re.compile(r'^\s*\.\s+["\']?\$MODDIR/(lib/[A-Za-z0-9_.-]+\.sh)["\']?', re.M)
+
+def required_libraries(shell_files):
+ required=set()
+ for name, contents in shell_files.items():
+  required.update(SOURCE_LIB.findall(contents))
+ return required
+
+def assert_runtime_libraries(packaged, contents):
+ missing=sorted(required_libraries(contents)-set(packaged))
+ if missing:
+  raise ValueError('MISSING_RUNTIME_LIBRARIES: '+', '.join(missing))
+
 
 def sha(data: bytes) -> str:
  return hashlib.sha256(data).hexdigest()
@@ -55,6 +72,7 @@ if __name__=='__main__':
  for file in INSTALL:
   if not (ROOT/file).is_file():
    raise SystemExit(f'Missing package file: {file}')
+ assert_runtime_libraries(INSTALL, {p:(ROOT/p).read_text() for p in INSTALL if p.endswith('.sh')})
  manifest=''.join(f'{sha((ROOT/p).read_bytes())}  {p}\n' for p in INSTALL).encode()
  version='v'+VERSION.lstrip('v')
  install=make(INSTALL,OUT/f'LSPosed-Guardian-{version}.zip',{'FILE_SHA256SUMS.txt':manifest})

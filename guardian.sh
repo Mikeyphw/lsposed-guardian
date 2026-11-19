@@ -1,6 +1,8 @@
 #!/system/bin/sh
 MODDIR="${0%/*}"
 . "$MODDIR/lib/common.sh" || exit 1
+. "$MODDIR/lib/vector-compat.sh" || exit 1
+. "$MODDIR/lib/backup-vault.sh" || exit 1
 . "$MODDIR/lib/crash.sh" || exit 1
 . "$MODDIR/lib/history.sh" || exit 1
 . "$MODDIR/lib/quarantine.sh" || exit 1
@@ -25,6 +27,11 @@ Usage: guardian.sh COMMAND [ARGS]
   status            Show recovery state and current framework health
   report            Emit machine-readable JSON diagnostic evidence
   doctor            Diagnose boot recovery, Vector CLI, backup and AshLooper
+  vector-capabilities  Runtime Vector API support (read-only, version agnostic)
+  backup-enable --apply  Enable optional manual database snapshot vault
+  backup-disable         Disable manual snapshot creation
+  backup status|list|create|verify|inspect|modules|compare|menu|tools|restore
+  backup limit N --apply  Retain newest N verified snapshots (1..20)
   modules           List enabled/disabled modules using Vector CLI
   scope-structured PKG  Validate and list structured Vector scope targets
   history-module PKG     Verify last 12 samples for one installed module
@@ -80,6 +87,11 @@ Usage: guardian.sh COMMAND [ARGS]
   softlock-probe        Read-only single boot-progress window probe
   softlock-on --apply   Opt into post-boot rescue (arms bounded Vector fallback)
   softlock-off          Stop future post-boot automatic rescue actions
+  softlock-session-probe  Read-only boot-progress/FallbackHome classification
+  softlock-suspect PKG --apply  Preapprove ONE suspect; no immediate mutation
+  softlock-selective-on --apply  Opt into one selective quarantine + Zygote restart
+  softlock-selective-off         Disarm selective rescue independently
+  softlock-verify       Read-only post-restart UI-signal verification
   auto-disarm           Disable automatic quarantine immediately
   auto-status           Show allowlist and last automatic action
   auto-tick --apply      Run one guarded auto-quarantine evaluation now (no bypass)
@@ -124,7 +136,7 @@ set_auto() {
 
 personal_config_set() {
   PCS_KEY="$1" PCS_VALUE="$2"
-  case "$PCS_KEY" in AUTO_QUARANTINE|AUTO_QUARANTINE_ALLOWLIST|AUTO_QUARANTINE_POLICY|AUTO_SAFE_MODE|AUTO_BOOTLOOP_REBOOT|AUTO_QUARANTINE_COOLDOWN_SECONDS|CRASH_EXCLUDE_PACKAGES|ACTION_NOTIFICATIONS|AUTO_SOFTLOCK) : ;; *) return 1;; esac
+  case "$PCS_KEY" in AUTO_QUARANTINE|AUTO_QUARANTINE_ALLOWLIST|AUTO_QUARANTINE_POLICY|AUTO_SAFE_MODE|AUTO_BOOTLOOP_REBOOT|AUTO_QUARANTINE_COOLDOWN_SECONDS|CRASH_EXCLUDE_PACKAGES|ACTION_NOTIFICATIONS|AUTO_SOFTLOCK|SOFTLOCK_SELECTIVE|SOFTLOCK_ZYGOTE_RESTART|SOFTLOCK_SUSPECT|BACKUP_VAULT_ENABLED|BACKUP_VAULT_LIMIT) : ;; *) return 1;; esac
   case "$PCS_VALUE" in *[!a-zA-Z0-9_.,]*) return 1;; esac
   PCS_TEMP="$CFG.personal.$$"
   # Rewrite a known key or append it. No eval, no shell metacharacters.
@@ -264,6 +276,39 @@ case "${1:-help}" in
     printf '"baseline_policy":"pinned","baseline_boot_id":%s,"baseline_provenance":"%s","snapshot_validation":"%s","observed_snapshot_available":%s}\n' \
       "$BASELINE_BOOT_JSON" "$(baseline_provenance)" "$(snapshot_integrity_level last-good)" "$([ "$(read_first "$SNAP_DIR/observed.complete")" = "$(boot_id | tr -cd 'a-fA-F0-9-')" ] && echo true || echo false)"
     ;;
+  backup-enable)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || exit 2
+    personal_config_set BACKUP_VAULT_ENABLED 1 || exit 1
+    echo 'backup_vault_enabled=1; no scheduler or restore enabled' ;;
+  backup-disable)
+    [ -z "${2:-}" ] || exit 2
+    personal_config_set BACKUP_VAULT_ENABLED 0 || exit 1
+    echo 'backup_vault_enabled=0; existing snapshots retained' ;;
+  backup)
+    case "${2:-status}" in
+      status) [ -z "${3:-}" ] || exit 2; bv_status ;;
+      list) [ -z "${3:-}" ] || exit 2; bv_list ;;
+      create) [ "${3:-}" = --apply ] && [ -z "${4:-}" ] || exit 2; bv_create ;;
+      verify) [ -n "${3:-}" ] && [ -z "${4:-}" ] || exit 2;
+        bv_verify "$3" && echo "snapshot=$3 integrity=verified" || { echo 'Snapshot validation FAILED' >&2; exit 1; } ;;
+      inspect) [ -n "${3:-}" ] && [ -z "${4:-}" ] || exit 2; bv_inspect "$3" ;;
+      modules) [ -n "${3:-}" ] && [ -z "${4:-}" ] || exit 2; bv_show_modules "$3" ;;
+      compare) [ -n "${3:-}" ] && [ -n "${4:-}" ] && [ -z "${5:-}" ] || exit 2; bv_compare "$3" "$4" ;;
+      tools) [ -z "${3:-}" ] || exit 2; bv_tools ;;
+      menu) [ -z "${3:-}" ] || exit 2; bv_menu ;;
+      limit)
+        [ "${4:-}" = --apply ] && [ -z "${5:-}" ] || exit 2
+        case "${3:-}" in ''|*[!0-9]*) exit 2;; esac
+        [ "$3" -ge 1 ] && [ "$3" -le 20 ] || exit 2
+        personal_config_set BACKUP_VAULT_LIMIT "$3" || exit 1
+        echo "backup_vault_limit=$3; prior backups unchanged until next manual creation" ;;
+      restore) [ -n "${3:-}" ] && [ -z "${5:-}" ] || exit 2;
+        [ -z "${4:-}" ] || [ "$4" = --apply ] || exit 2; bv_restore_preview "$3" ;;
+      *) echo 'Unsupported backup command' >&2; exit 2 ;;
+    esac ;;
+  vector-capabilities)
+    [ -z "${2:-}" ] || exit 2
+    vc_status ;;
   doctor) doctor ;;
   panel)
     echo "LSPOSED GUARDIAN $(guardian_version) / READ-ONLY PANEL"
@@ -502,6 +547,8 @@ case "${1:-help}" in
     personal_config_set AUTO_SAFE_MODE 0 || exit 1
     personal_config_set AUTO_BOOTLOOP_REBOOT 0 || exit 1
     personal_config_set AUTO_SOFTLOCK 0 || exit 1
+    personal_config_set SOFTLOCK_SELECTIVE 0 || exit 1
+    personal_config_set SOFTLOCK_ZYGOTE_RESTART 0 || exit 1
     echo 'PASS_GUARDIAN_AUTOMATIC_MODE_DISARMED'
     echo 'existing_quarantines_and_disable_markers_preserved=true'
     ;;
@@ -524,6 +571,47 @@ case "${1:-help}" in
   softlock-probe)
     if sl_probe; then echo 'softlock_probe=visible_boot_progress';
     else SL_PROBE_RC=$?; if [ "$SL_PROBE_RC" = 1 ]; then echo 'softlock_probe=no_boot_progress_window'; else echo 'softlock_probe=unverified'; fi; fi ;;
+  softlock-session-probe)
+    [ -z "${2:-}" ] || exit 2
+    echo "softlock_session_signal=$(sl_session_signal)" ;;
+  softlock-suspect)
+    check_pkg "${2:-}" || exit 2
+    [ "${3:-}" = --apply ] && [ -z "${4:-}" ] || exit 2
+    case "$2" in com.android.*|android.*) echo 'Protected framework package' >&2; exit 1;; esac
+    case ",$CRASH_EXCLUDE_PACKAGES," in *,"$2",*) echo 'Excluded package' >&2; exit 1;; esac
+    [ "$AUTO_SOFTLOCK" = 0 ] && [ "$SOFTLOCK_SELECTIVE" = 0 ] || {
+      echo 'Disarm selective actions before changing suspect' >&2; exit 1;
+    }
+    personal_config_set SOFTLOCK_SUSPECT "$2" || exit 1
+    echo "softlock_suspect=$2; module_changed=false" ;;
+  softlock-selective-on)
+    [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || exit 2
+    [ "$AUTO_RECOVERY" = 0 ] && [ "$SOFTLOCK_MONITOR" = 1 ] &&
+      boot_complete && [ "$(read_first "$BOOT_DIR/last-success-id")" = "$(boot_id)" ] &&
+      [ ! -e "$STATE_DIR/softlock/selective-attempt" ] &&
+      [ ! -e "$BOOT_DIR/manual-restore" ] && [ ! -e "$OS_REQ" ] &&
+      vector status >/dev/null 2>&1 || {
+      echo 'Selective rescue requires verified stable Android/Vector and no pending restore' >&2; exit 1;
+    }
+    [ -n "$SOFTLOCK_SUSPECT" ] && check_pkg "$SOFTLOCK_SUSPECT" &&
+      [ -z "$(read_first "$STATE_DIR/softlock/selective-attempt")" ] || exit 1
+    q_preview "$SOFTLOCK_SUSPECT" | grep -Fq 'is ENABLED' || {
+      echo 'Selected suspect must be enabled and not already quarantined' >&2; exit 1;
+    }
+    [ "$(getprop init.svc.zygote 2>/dev/null)" = running ] &&
+      command -v setprop >/dev/null 2>&1 || {
+      echo 'Primary zygote restart unavailable on this ROM' >&2; exit 1;
+    }
+    # Arm only selective recovery: no implicit permission for a full reboot.
+    [ "$AUTO_SOFTLOCK" = 1 ] || personal_config_set AUTO_SOFTLOCK 1 || exit 1
+    personal_config_set SOFTLOCK_ZYGOTE_RESTART 1 || exit 1
+    personal_config_set SOFTLOCK_SELECTIVE 1 || exit 1
+    echo 'selective_softlock=ARMED_ONCE_ON_CONFIRMED_EVIDENCE; no_module_mutated_now=true' ;;
+  softlock-selective-off)
+    personal_config_set SOFTLOCK_SELECTIVE 0 || exit 1
+    personal_config_set SOFTLOCK_ZYGOTE_RESTART 0 || exit 1
+    echo 'selective_softlock=OFF; past_journals_preserved=true' ;;
+  softlock-verify) sl_verify_restart ;;
   softlock-on)
     [ "${2:-}" = --apply ] && [ -z "${3:-}" ] || { echo 'softlock-on requires --apply' >&2; exit 2; }
     # Independent from crash collector and historical scope sampler. This
@@ -550,6 +638,8 @@ case "${1:-help}" in
     personal_config_set AUTO_SOFTLOCK 1 || exit 1
     echo 'PASS_GUARDIAN_SOFTLOCK_ARMED; bounded Vector fallback and watchdog armed, crash policy unchanged' ;;
   softlock-off)
+    personal_config_set SOFTLOCK_SELECTIVE 0 || exit 1
+    personal_config_set SOFTLOCK_ZYGOTE_RESTART 0 || exit 1
     personal_config_set AUTO_SOFTLOCK 0 || exit 1
     echo 'PASS_GUARDIAN_SOFTLOCK_DISARMED; disable markers unchanged' ;;
   auto-allow|auto-deny)
@@ -598,6 +688,8 @@ case "${1:-help}" in
     personal_config_set AUTO_SAFE_MODE 1 || exit 1
     echo 'AUTO_SAFE_MODE=1; when boot threshold reached, Vector disable marker requested for next boot' ;;
   safe-mode-disarm)
+    personal_config_set SOFTLOCK_SELECTIVE 0 || exit 1
+    personal_config_set SOFTLOCK_ZYGOTE_RESTART 0 || exit 1
     personal_config_set AUTO_SOFTLOCK 0 || exit 1
     personal_config_set AUTO_SAFE_MODE 0 || exit 1
     echo 'AUTO_SAFE_MODE=0; any existing Vector disable marker is preserved' ;;

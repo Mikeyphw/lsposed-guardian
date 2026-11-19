@@ -1,6 +1,6 @@
 id=lsposed_guardian
 name=LSPosed Guardian
-version=0.12.2
-versionCode=1202
+version=0.12.4
+versionCode=1204
 author=Community prototype
-description=Post-boot softlock detection with bounded opt-in Vector rescue; protection-first WebUI with verified scope history, guarded policy settings, notifications trial, and independent crash/sampler health.
+description=Multi-signal post-boot health, opt-in selective quarantine + one framework restart, capability-based Vector compatibility, optional verified manual backups; unsafe SQLite restores disabled.
