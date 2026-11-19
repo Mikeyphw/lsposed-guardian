@@ -425,4 +425,71 @@ class GuardianV0124ValidationRunnerContract(unittest.TestCase):
             module.execute((sys.executable,'-B','-c','raise SystemExit(0)'),
                            deadline=time.monotonic()-1,cwd=ROOT)
 
+class GuardianWALObservationRegression(unittest.TestCase):
+    """Guard the actual SQLite SHM mutation behind the hosted retired-journal failure."""
+
+    @staticmethod
+    def model():
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            'guardian_wal_model_contract', ROOT / 'tools/early_boot_transaction_lab.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_sqlite_read_never_mutates_original_wal_family(self):
+        import tempfile
+        from pathlib import Path
+        model = self.model()
+        with tempfile.TemporaryDirectory(prefix='guardian-host-observation-') as tmp:
+            db, _ = model.make_fixture(Path(tmp))
+            before = {suffix: model.digest(Path(str(db) + suffix))
+                      for suffix in ('', '-wal', '-shm')}
+            for _ in range(3):
+                self.assertEqual(model.query(db), 'old-wal-value')
+                self.assertEqual(
+                    {suffix: model.digest(Path(str(db) + suffix))
+                     for suffix in ('', '-wal', '-shm')}, before)
+
+    def test_retired_journal_rollback_preserves_bytes_and_is_retriable(self):
+        import tempfile
+        from pathlib import Path
+        model = self.model()
+        with tempfile.TemporaryDirectory(prefix='guardian-host-rollback-') as tmp:
+            db, source = model.make_fixture(Path(tmp))
+            before = {suffix: model.digest(Path(str(db) + suffix))
+                      for suffix in ('', '-wal', '-shm')}
+            txn = model.CandidateProtocol(db, source)
+            with self.assertRaises(model.InjectedInterruption):
+                txn.apply(at='retired-journal')
+            for _ in range(2):
+                txn.recover_before_daemon()
+                self.assertEqual(model.query(db), 'old-wal-value')
+                self.assertEqual(
+                    {suffix: model.digest(Path(str(db) + suffix))
+                     for suffix in ('', '-wal', '-shm')}, before)
+            self.assertEqual(__import__('json').loads(txn.marker.read_text())['phase'],
+                             'ROLLED_BACK_VERIFIED')
+
+    def test_tampered_wal_or_shm_backup_refuses_before_recovery_writes(self):
+        import tempfile
+        from pathlib import Path
+        model = self.model()
+        for suffix in ('-wal', '-shm'):
+            with self.subTest(suffix=suffix), tempfile.TemporaryDirectory(
+                    prefix='guardian-host-corrupt-backup-') as tmp:
+                db, source = model.make_fixture(Path(tmp))
+                txn = model.CandidateProtocol(db, source)
+                with self.assertRaises(model.InjectedInterruption):
+                    txn.apply(at='retired-journal')
+                source_db_hash = model.digest(db)
+                backup = txn.txn / ('old' + suffix)
+                backup.write_bytes(backup.read_bytes() + b'CORRUPTED')
+                with self.assertRaises(model.Refusal):
+                    txn.recover_before_daemon()
+                self.assertEqual(model.digest(db), source_db_hash)
+                self.assertEqual(__import__('json').loads(txn.marker.read_text())['phase'],
+                                 'PREPARED')
+
+
 if __name__=='__main__':unittest.main()

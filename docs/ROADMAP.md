@@ -302,7 +302,7 @@ See [PACKAGING_HOTFIX_V0123.md](DEVTOOL_INTEGRATION_IMPROVEMENTS.md).
 - [x] Keep offline Vector database restoration version-pinned and unqualified on future builds.
 - [ ] Qualify real-device Zygote restart, KeyguardService signals, RescueParty interactions, module rollback, and OEM variants.
 - [ ] Qualify an offline manual restore path for the vault before adding any restore action.
-- [ ] Deliver via verified native Devtool v3.2+ launcher onto a clean feature branch and qualify exact PR HEAD/CI.
+- [x] Deliver source-bound native Devtool executable-overlay v2 PYZ on a clean feature branch; PR HEAD/CI qualification remains open.
 
 [Detailed contract](ROADMAP.md).
 
@@ -546,3 +546,20 @@ staged parity before reboot and active parity after reboot.
 
 The old historical sampler issue and full real-device softlock recovery
 acceptance are not closed by this packaging fix.
+
+### v0.12.4 host WAL model — CI regression follow-up (2026-11-18)
+
+- Hosted PR #1 initially failed `test_early_boot_lab_is_hermetic_and_device_gates_remain_open`
+  at the `retired-journal` checkpoint. SQLite opening even a `SELECT` on a
+  WAL-backed fixture can rewrite its SHM sidecar, invalidating a later raw
+  file-hash comparison performed by that same test.
+- The isolated lab now queries only a detached disposable copy of the DB, WAL
+  and SHM family. It verifies the restored *original* bytes against source
+  hashes **before** the copy-only read and tests exact byte preservation,
+  repeatable rollback, and refusal of tampered WAL/SHM backups.
+- The production code, CI gates, and device qualification policy are unchanged.
+  Host-only regression success does **not** qualify on-device WAL restore,
+  actual early-boot interruption, SELinux context, or a production release.
+- Required acceptance: native Devtool exact-tree validate/check/apply/commit
+  against the current PR branch, then verify the new PR HEAD and complete
+  hosted checks. Do not rerun an already committed overlay.

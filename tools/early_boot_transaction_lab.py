@@ -90,10 +90,27 @@ def make_fixture(work: Path):
 
 
 def query(db: Path) -> str:
-    with sqlite3.connect(db) as c:
-        row = c.execute('SELECT value FROM settings').fetchone()
-        assert row
-        return str(row[0])
+    """Read a detached SQLite family, never the bytes being tested/restored.
+
+    SQLite may rewrite even a read-only-looking WAL/-shm sidecar when opening
+    or closing a SELECT connection.  The host model must not mutate its own
+    before/after evidence while proving byte-exact WAL-family preservation.
+    Only disposable, offline fixtures are accepted by this model.
+    """
+    with tempfile.TemporaryDirectory(prefix='guardian-earlyboot-observe-') as tmp:
+        clone = Path(tmp) / 'observed.db'
+        shutil.copy2(db, clone)
+        for suffix in SIDECARS:
+            source = Path(str(db) + suffix)
+            if source.is_file():
+                shutil.copy2(source, Path(str(clone) + suffix))
+        conn = sqlite3.connect(clone)
+        try:
+            row = conn.execute('SELECT value FROM settings').fetchone()
+            assert row
+            return str(row[0])
+        finally:
+            conn.close()
 
 
 class CandidateProtocol:
@@ -122,7 +139,9 @@ class CandidateProtocol:
                 durable_copy(side, self.txn / ('old' + suffix))
                 found.append(suffix)
         durable_marker(self.marker, {'phase': 'PREPARED', 'db_hash': digest(self.txn / 'old.db'),
-                                    'stage_hash': digest(self.txn / 'stage.db'), 'sidecars': found})
+                                    'stage_hash': digest(self.txn / 'stage.db'), 'sidecars': found,
+                                    'sidecar_hashes': {suffix: digest(self.txn / ('old' + suffix))
+                                                       for suffix in found}})
 
     def apply(self, at: str | None = None) -> None:
         self.prepare()
@@ -154,6 +173,13 @@ class CandidateProtocol:
         old = self.txn / 'old.db'
         if digest(old) != metadata['db_hash']:
             raise Refusal('Old database backup digest mismatched')
+        saved_sidecars = metadata.get('sidecar_hashes')
+        if not isinstance(saved_sidecars, dict) or set(saved_sidecars) != set(metadata['sidecars']):
+            raise Refusal('Old WAL-family sidecar inventory mismatched')
+        for suffix in metadata['sidecars']:
+            saved = self.txn / ('old' + suffix)
+            if not saved.is_file() or digest(saved) != saved_sidecars[suffix]:
+                raise Refusal('Old WAL-family sidecar backup digest mismatched: ' + suffix)
         # Persistent old backups are NOT consumed. Recovery itself can be
         # retried safely after a second interruption.
         tmp = self.txn / 'rollback.db'
@@ -166,6 +192,10 @@ class CandidateProtocol:
         for suffix in metadata['sidecars']:
             durable_copy(self.txn / ('old' + suffix), Path(str(self.db) + suffix))
         syncdir(self.db.parent)
+        if (digest(self.db) != metadata['db_hash'] or
+                any(digest(Path(str(self.db) + suffix)) != saved_sidecars[suffix]
+                    for suffix in metadata['sidecars'])):
+            raise Refusal('Restored DB/WAL-family bytes differ from verified backups')
         if query(self.db) != 'old-wal-value':
             raise Refusal('Restored WAL-backed old state not verified')
         durable_marker(self.marker, {**metadata, 'phase': 'ROLLED_BACK_VERIFIED'})
