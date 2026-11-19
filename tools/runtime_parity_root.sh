@@ -14,7 +14,7 @@ for TYPE in ACTIVE STAGED; do
     STAGED) DIR=/data/adb/modules_update/lsposed_guardian ;;
   esac
   if [ ! -d "$DIR" ]; then echo "$TYPE|ABSENT"; continue; fi
-  for NAME in module.prop guardian.sh lib/crash.sh lib/qualification.sh lib/one-shot.sh post-fs-data.sh service.sh lib/common.sh lib/auto-quarantine.sh lib/safe-mode.sh crash-monitor.sh lib/quarantine.sh; do
+  for NAME in module.prop guardian.sh lib/crash.sh lib/qualification.sh lib/one-shot.sh post-fs-data.sh service.sh lib/common.sh lib/auto-quarantine.sh lib/safe-mode.sh lib/softlock.sh lib/vector-compat.sh lib/backup-vault.sh crash-monitor.sh lib/quarantine.sh; do
     P="$DIR/$NAME"
     if [ ! -f "$P" ]; then echo "$TYPE|$NAME|MISSING"; continue; fi
     HASH="$("$H" "$P" 2>/dev/null | awk '{print $1}')"

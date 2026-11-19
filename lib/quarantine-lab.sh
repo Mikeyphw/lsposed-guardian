@@ -64,6 +64,14 @@ quarantine_lab_run() (
     esac
     return 9
   }
+  # The compatibility identity probe is intentionally replaced in the isolated
+  # transaction lab: it has no access to production Vector or module.prop.
+  # Adapter contract tests exercise vc_json_inventory separately.
+  vc_json_inventory() {
+    vector --json modules ls > "$1" || return 1
+    grep -Eq '"success"[[:space:]]*:[[:space:]]*true' "$1" || return 1
+  }
+  vector_bounded() { shift; vector "$@"; }
   vector_enabled_manifest() {
     cp "$LAB_MODS" "$1" || return 1
   }

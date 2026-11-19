@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib, json
 from pathlib import Path
 from zipfile import ZipFile
+from build import assert_runtime_libraries
 ROOT=Path(__file__).resolve().parents[1]
 D=ROOT/'dist'
 evidence=json.loads((D/'build-evidence.json').read_text())
@@ -21,6 +22,8 @@ for kind in ('install','source'):
   assert all(not item.startswith('/') and '..' not in Path(item).parts for item in entries)
   if kind=='install':
    assert z.read('module.prop')==(ROOT/'module.prop').read_bytes()
+   # Validate contents in the archive itself, not merely the source tree.
+   assert_runtime_libraries(entries, {item:z.read(item).decode() for item in entries if item.endswith('.sh')})
    manifest=z.read('FILE_SHA256SUMS.txt').decode().splitlines()
    assert len(manifest)==len(entries)-1
    for line in manifest:

@@ -15,7 +15,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 FILES = ('module.prop', 'guardian.sh', 'lib/crash.sh', 'lib/qualification.sh',
          'lib/one-shot.sh', 'post-fs-data.sh', 'service.sh', 'lib/common.sh',
-         'lib/auto-quarantine.sh', 'lib/safe-mode.sh', 'crash-monitor.sh', 'lib/quarantine.sh')
+         'lib/auto-quarantine.sh', 'lib/safe-mode.sh', 'lib/softlock.sh','lib/vector-compat.sh','lib/backup-vault.sh', 'crash-monitor.sh', 'lib/quarantine.sh')
 KEYS = ('ACTIVE', 'STAGED')
 
 

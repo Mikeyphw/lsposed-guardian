@@ -68,10 +68,24 @@ if [ "$SL_OBSERVE_RESULT" -eq 2 ]; then
   sl_recover || :
   exit 0
 fi
-# Unsupported visibility is distinct from a confirmed clear result; the
-# regular boot stability receipt remains a *process* health receipt only.
 if [ "$SL_OBSERVE_RESULT" -ne 0 ]; then
-  log WARN 'Softlock window detection unverified; no automatic rescue action'
+  # An unknown or delayed UI cannot be certified as a healthy user session.
+  # It also must not be counted as an early-boot failure: Android's framework
+  # processes remained stable. Preserve both classifications independently.
+  write_atomic "$BOOT_DIR/last-process-stable-id" "$ID" || exit 0
+  write_atomic "$BOOT_DIR/failures" 0 || exit 0
+  write_atomic "$BOOT_DIR/auto-reboot-count" 0 || :
+  rm -f "$BOOT_DIR/pending-id"
+  log WARN 'Process boot stable; post-boot UI unverified. No known-good baseline promotion or automatic rescue.'
+  # Independent read-only collectors remain useful even on unsupported ROMs.
+  # They cannot turn this unverified UI state into a success receipt.
+  if [ "$PASSIVE_CRASH_MONITOR" = 1 ]; then
+    sh "$MODDIR/crash-monitor.sh" </dev/null >/dev/null 2>&1 &
+  fi
+  if [ "$HISTORY_MONITOR" = 1 ]; then
+    sh "$MODDIR/history-monitor.sh" </dev/null >/dev/null 2>&1 &
+  fi
+  exit 0
 fi
 
 # A failed snapshot must not make an otherwise stable boot count as a bootloop.

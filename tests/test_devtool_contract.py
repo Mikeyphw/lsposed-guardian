@@ -17,6 +17,20 @@ class DevtoolContractTests(unittest.TestCase):
   self.assertEqual(TARGET['execution_environment'],'native-termux')
   self.assertEqual(TARGET['runner'],'command')
 
+ def test_declared_output_jobs_are_not_marked_read_only(self):
+  # Devtool's native parser refuses read_only=true with output paths or scopes.
+  for name, job in TARGET['jobs'].items():
+   if job.get('outputs') or job.get('output_scopes'):
+    self.assertIsNot(job.get('metadata', {}).get('read_only'), True,
+                     f'{name}: native output/metadata contradiction')
+  for name, expected in (
+      ('host-qualification', 'dist/host-qualification.json'),
+      ('early-boot-model', 'dist/early-boot-prototype-lab.json')):
+   job = TARGET['jobs'][name]
+   self.assertEqual(job['outputs'], [expected])
+   self.assertIs(job['metadata']['read_only'], False)
+   self.assertIs(job['metadata']['device_qualified'], False)
+
  def test_install_workflow_has_integrity_prerequisite(self):
   steps=TARGET['workflows']['install']
   self.assertEqual([x['id'] for x in steps],['preflight','unit','contract','ui','ci-parity','wal-model','boot-trial-tests','one-shot-tests','parity-tests','personal-auto-tests','qualification','package','verify','install'])
@@ -329,10 +343,86 @@ class DevtoolContractTests(unittest.TestCase):
   p=subprocess.run(['python3','-m','unittest','discover','-s','tests','-p','test_boot_probe.py','-q'],cwd=ROOT,text=True,capture_output=True,timeout=60)
   self.assertEqual(p.returncode,0,p.stdout+p.stderr)
 
+ def test_all_shell_imports_are_in_installable_archive(self):
+  import importlib.util, tempfile, zipfile, json
+  sys.path.insert(0,str(ROOT/'tools'))
+  import build as builder
+  scripts={p:(ROOT/p).read_text() for p in builder.INSTALL if p.endswith('.sh')}
+  required=builder.required_libraries(scripts)
+  self.assertIn('lib/softlock.sh',required)
+  self.assertTrue(required <= set(builder.INSTALL))
+  with self.assertRaisesRegex(ValueError,'MISSING_RUNTIME_LIBRARIES: lib/softlock.sh'):
+   builder.assert_runtime_libraries([p for p in builder.INSTALL if p!='lib/softlock.sh'],scripts)
+  with tempfile.TemporaryDirectory(prefix='guardian-package-test-') as d:
+   package=pathlib.Path(d)/'test.zip'
+   builder.make(builder.INSTALL,package)
+   with zipfile.ZipFile(package) as z:
+    names=set(z.namelist())
+    self.assertIn('lib/softlock.sh',names)
+    self.assertEqual(z.read('lib/softlock.sh'),(ROOT/'lib/softlock.sh').read_bytes())
+    builder.assert_runtime_libraries(names,{p:z.read(p).decode() for p in names if p.endswith('.sh')})
  def test_app_package_is_android_installable_root_module(self):
   prop=(ROOT/'module.prop').read_text()
   self.assertIn('id=lsposed_guardian\n',prop)
   for name in ('service.sh','post-fs-data.sh','customize.sh','webroot/index.html'):
    self.assertTrue((ROOT/name).is_file())
+
+
+
+class GuardianV0124ValidationRunnerContract(unittest.TestCase):
+    """Do not reintroduce monolithic timeouts or silent test selection drift."""
+    def test_hosted_pr_and_release_cover_new_safety_suites(self):
+        # PR and release acceptance must run the full v0.12.4 host matrix.
+        # The native Termux overlay applies only selected, safety-critical tests.
+        suites = ('test_vector_compat.py', 'test_softlock.py',
+                  'test_softlock_extended.py', 'test_backup_vault.py',
+                  'test_boot_probe.py')
+        for workflow in ('ci.yml', 'release.yml'):
+            content = (ROOT / '.github' / 'workflows' / workflow).read_text()
+            for name in suites:
+                cmd = f'python3 -S -m unittest discover -s tests -p {name} -q'
+                self.assertEqual(content.count(cmd), 1, (workflow, name))
+            self.assertIn('python3 tools/run_host_tests.py --workers 2 --timeout 180', content)
+            self.assertIn('python3 tools/qualify_host.py', content)
+            self.assertNotIn('ksud module install', content)
+
+    def test_all_current_host_suites_are_required(self):
+        import importlib.util
+        path=ROOT/'tools/check_guardian_v0124.py'
+        spec=importlib.util.spec_from_file_location('guardian_v0124_host_runner',path)
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        discovered={p.name for p in (ROOT/'tests').glob('test_*.py')}
+        self.assertEqual(discovered,set(module.SUPPORTED))
+        self.assertGreaterEqual(sum(len(module.suite_cases(p)) for p in module.SUPPORTED),209)
+        self.assertEqual(module.SPLIT_SIZES['test_backup_vault.py'],3)
+        self.assertEqual(module.SPLIT_SIZES['test_one_shot.py'],7)
+
+    def test_shards_cover_every_backup_test_exactly_once(self):
+        import importlib.util
+        path=ROOT/'tools/check_guardian_v0124.py'
+        spec=importlib.util.spec_from_file_location('guardian_v0124_host_runner_verify',path)
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        for name in ('test_backup_vault.py','test_one_shot.py'):
+            jobs,count=module.batches(name)
+            ids=[s for job in jobs for s in job[5:]]
+            self.assertEqual(sorted(ids),list(module.suite_cases(name)))
+            self.assertEqual(len(ids),count)
+            self.assertTrue(all(len(j[5:])<=module.SPLIT_SIZES[name] for j in jobs))
+
+    def test_missing_or_failing_process_never_counts_as_pass(self):
+        import importlib.util
+        path=ROOT/'tools/check_guardian_v0124.py'
+        spec=importlib.util.spec_from_file_location('guardian_v0124_host_runner_negative',path)
+        module=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        import time
+        with self.assertRaises(RuntimeError):
+            module.execute((sys.executable,'-B','-c','raise SystemExit(27)'),
+                           deadline=time.monotonic()+20,cwd=ROOT)
+        with self.assertRaises(RuntimeError):
+            module.execute((sys.executable,'-B','-c','raise SystemExit(0)'),
+                           deadline=time.monotonic()-1,cwd=ROOT)
 
 if __name__=='__main__':unittest.main()

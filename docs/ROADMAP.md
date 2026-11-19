@@ -278,3 +278,271 @@ See `docs/WEBUI_V012_AUDIT.md` for a promise-by-promise status table. This corre
 - [ ] Consider OEM-specific loading screens only with verified independent evidence; do not use locked-user state alone.
 
 Details: [SOFTLOCK_V0122.md](SOFTLOCK_V0122.md).
+
+## v0.12.3 packaging integrity hotfix (2026-10-30)
+
+- [x] Confirm user-reported WebUI failure is an omitted runtime shell library, not a Vector policy or ROM issue.
+- [x] Include `lib/softlock.sh` in the installable KernelSU archive and checksum manifest.
+- [x] Enforce static `$MODDIR/lib/*.sh` dependency closure in source preflight, package creation and archive verification.
+- [x] Extend installed/staged runtime parity and tests for missing `lib/softlock.sh`.
+- [x] Replay exact source-bound v0.12.2 to v0.12.3 overlay, verify built ZIP and reject duplicate patching.
+- [ ] Verify on-device staged archive after `devtoolw install`; reboot and verify active service + WebUI can refresh.
+- [ ] Verify real post-boot soft-lock detection/recovery separately; host packaging success does not qualify rescue behavior.
+
+See [PACKAGING_HOTFIX_V0123.md](DEVTOOL_INTEGRATION_IMPROVEMENTS.md).
+
+## v0.12.4 — selective soft-lock and forward-compatible Vector adapter
+
+- [x] Distinguish `TYPE_BOOT_PROGRESS` from FallbackHome plus independently corroborated keyguard/process-start failure.
+- [x] Never classify a legitimate locked user / ambiguous FallbackHome as a failed conventional boot.
+- [x] Require one explicitly preapproved Xposed module, Guardian's journaled quarantine, one latched framework restart, and independent post-restart receipts.
+- [x] Make selective rescue opt-in and independent of full-reboot fallback.
+- [x] Bound Vector daemon calls; fail closed on incompatible CLI JSON without blanket version ceilings.
+- [x] Introduce an optional manual-only, verified SQLite snapshot vault with same-day uniqueness and retention.
+- [x] Keep offline Vector database restoration version-pinned and unqualified on future builds.
+- [ ] Qualify real-device Zygote restart, KeyguardService signals, RescueParty interactions, module rollback, and OEM variants.
+- [ ] Qualify an offline manual restore path for the vault before adding any restore action.
+- [ ] Deliver via verified native Devtool v3.2+ launcher onto a clean feature branch and qualify exact PR HEAD/CI.
+
+[Detailed contract](ROADMAP.md).
+
+### Audited v0.12.4 follow-up boundaries
+
+The same consolidated v0.12.4 handoff corrects false successful-boot receipts,
+logcat event freshness, guarded restart verification and manual snapshot
+management. Host-only successes do not qualify live Vector database restore,
+Android input readiness, Zygote/RescueParty behavior, or KernelSU module
+installation. Those remain explicit device acceptance items rather than
+version-specific mandatory gates.
+
+---
+
+## Appendix: v0.12.4 selective recovery, compatibility, and backup-vault detailed contract
+
+# Guardian v0.12.4 — selective post-boot recovery, Vector compatibility, and manual vault
+
+This milestone is **host-tested source only** until installed and qualified on
+an Android device. It does not arm automatic recovery, trigger a Zygote restart,
+install a KernelSU module, or modify any Vector database during packaging.
+
+## Post-boot classification
+
+Guardian retains the positive `TYPE_BOOT_PROGRESS` detector and additionally
+inspects the *currently resumed* Android FallbackHome activity. FallbackHome by
+itself is expected during some legitimate pre-unlock states. It is **never**
+automatic recovery evidence. Guardian requires persistent FallbackHome plus
+independent KeyguardService-death evidence or timeouts involving at least two
+critical process names, observed across a full configurable grace period.
+
+`softlock-session-probe` reports `boot_progress`, `fallback_keyguard_failure`,
+`fallback_process_start_storm`, `fallback_unverified`, `clear`, or `unverified`.
+`clear` means these specific signs were not seen, **not** that the UI was tested
+with user input. The detector is a boot-window observer, not a continuous
+interactive touch or lockscreen health test. ROM-specific layouts/log formats
+can produce `unverified`; automatic actions fail closed.
+
+An ambiguous FallbackHome leaves the UI receipt unverified, but clears the
+conventional bootloop pending marker as a **process-stable** result. Otherwise,
+legitimate first-unlock waits could accumulate failed-boot counts and trigger
+an inappropriate future safe-mode marker. It neither promotes a known-good
+snapshot nor claims a usable interface.
+
+## Selective quarantine → one framework restart
+
+This is a **separate opt-in**. Automatic attribution is intentionally not
+implemented: a historical scope match cannot prove which hook caused a
+soft lock. The operator explicitly preapproves one module package while the
+phone is healthy. Only a later confirmed, sustained soft lock is eligible.
+
+```sh
+G=/data/adb/modules/lsposed_guardian/guardian.sh
+su -c "$G vector-capabilities"
+su -c "$G softlock-session-probe"
+su -c "$G softlock-suspect org.example.module --apply"
+su -c "$G softlock-selective-on --apply"
+su -c "$G softlock-status"
+# Disarm whenever desired:
+su -c "$G softlock-selective-off"
+```
+
+Arming requires a known healthy kernel boot, a responsive Vector daemon, an
+installed and enabled preapproved module, a parseable inventory, an available
+primary Zygote service, no pending database restore, and no past selective
+attempt latch. No module or process is changed during arming.
+
+When triggered, Guardian journals an attempt *before* mutation, reuses the
+existing journaled `quarantine PACKAGE --apply` operation, verifies an active
+quarantine receipt, and issues at most one root `ctl.restart zygote` command.
+This is a framework restart, **not** Android 15+'s deprecated userspace
+reboot. It terminates apps and `system_server`; Android/KernelSU/ROM behavior
+varies. The observer checks for a changed `system_server` PID and two separate
+clear session observations. Even success means only
+`ui_signals_clear_not_device_certified`, not a physically verified lockscreen.
+The attempt latch survives interruption; no automatic retry, reverse toggle,
+SQLite restore, or unapproved kernel reboot follows a failure.
+
+Vector itself has a soft-reboot implementation using `ctl.restart zygote` and
+special protection against Android RescueParty counting deliberate restarts.
+Guardian deliberately does **not** alter RescueParty counters: that requires
+separate device-specific approval. Test on a recoverable device before arming.
+
+Guardian's preexisting full KernelSU Vector-disable fallback is independent.
+The selective-on command does **not** silently arm that fallback or its reboot
+watchdog. If the operator previously armed them, their normal policy remains
+unchanged. Disarming selective rescue preserves all quarantine/incident
+journals; it does not automatically reenable disabled modules.
+
+## Future Vector versions
+
+`vector-capabilities` performs a read-only per-device compatibility probe.
+New `versionCode` values are not rejected merely for being newer. The gate
+checks the exact `zygisk_vector` module identity, a reachable daemon, a
+bounded CLI call, and the currently supported JSON inventory contract
+(`success`, a `data` array, `PACKAGE`, `STATUS`). An unknown schema or
+unreachable CLI permits diagnostics but blocks module toggles. The actual
+toggle transaction must still verify that **only** the selected module changed.
+
+Consistent backups are verified per snapshot with Vector's `db backup` and
+SQLite integrity/schema checks. **Live/offline database replacement retains
+its separately qualified exact 3112 version restriction.** No future version
+can inherit permission for a raw DB swap simply because its CLI looks similar.
+New CLI/schema variants must be explicitly implemented and tested.
+
+## Optional manual backup vault
+
+The vault is disabled until `backup-enable --apply`. It captures Vector's
+consistent SQLite backup plus a verified enabled-module manifest and metadata,
+with SHA-256 verification, a monotonic same-second sequence, and latest-five
+verified-snapshot retention. It uses Guardian's private root state, not
+`/data/local/tmp`, and does not install or remove schedulers.
+
+```sh
+su -c "$G backup-enable --apply"
+su -c "$G backup create --apply"
+su -c "$G backup list"
+su -c "$G backup inspect snap-YYYYMMDD_HHMMSS_NNNNNN"
+su -c "$G backup verify snap-YYYYMMDD_HHMMSS_NNNNNN"
+su -c "$G backup-disable"
+```
+
+Snapshot creation requires a stable boot, a responsive compatible Vector CLI,
+and a local SQLite integrity verifier. If these are unavailable, no raw WAL
+copy is silently substituted. `backup restore ID` is a documented refusal:
+restoring a live SQLite DB while Vector may hold it open is unsafe. The vault
+currently backs up the **Vector SQLite configuration database**, not every
+non-DB config file. A separately qualified offline restore is required before
+adding actual restoration. No automatic restoration is implemented.
+
+## Evidence and release boundaries
+
+- Host: repository syntax/manifest, deterministic ZIP/hash validation, targeted
+  boot/softlock/compatibility/vault/quarantine/one-shot/WebUI regressions.
+- NOT tested: live `setprop ctl.restart zygote`, real Vector hooks, keyboard or
+  lockscreen recovery, RescueParty behavior, real KernelSU module installs,
+  device rollback or boot-health confirmation.
+- Native Devtool launcher, native overlay application, committed HEAD/branch,
+  PR and hosted CI require an exact-source runtime on the operator's Termux
+  device. Host-only tests do **not** replace those requirements.
+
+Sources studied:
+- https://github.com/JingMatrix/Vector/blob/master/daemon/src/main/kotlin/org/matrix/vector/daemon/VectorDaemon.kt
+- https://github.com/JingMatrix/Vector/blob/master/daemon/src/main/kotlin/org/matrix/vector/daemon/Cli.kt
+- https://github.com/JingMatrix/Vector/blob/master/zygisk/README.md
+- https://android.googlesource.com/platform/frameworks/base/
+
+## v0.12.4 audited correction — current handoff
+
+This corrected handoff supersedes the earlier v0.12.4 inputs **before any
+native application**. It does not change the preimage: v0.12.3 source produced
+by the supplied Oct 30 snapshot and the v0.12.1–v0.12.3 source overlays.
+
+- `FallbackHome` fault corroboration uses **time-bounded epoch-formatted logcat**.
+  Old events, missing timestamps and unavailable `dumpsys` remain unverified;
+  none authorize automatic quarantine. The normal boot observation lasts the
+  full grace window (rather than stopping after two early clear samples). A
+  late-onset fault may be observed for up to twice that window so it still
+  needs sustained evidence. A parseable resumed HOME activity is required for
+  a clear result; an empty ActivityManager dump is not a healthy interface.
+- A process-stable but UI-unverified boot receives a **separate process receipt**.
+  It clears early bootloop accounting, withholds `last-success-id`, does not
+  promote the pinned recovery baseline, and can start read-only collectors.
+  This avoids treating a normal locked phone or unsupported OEM UI as an early
+  boot failure without pretending the interface was verified.
+- A successful `setprop ctl.restart zygote` merely records that a request was
+  sent. Independent evidence must show a changed `system_server` PID and two
+  clear activity/window observations; otherwise the result stays unverified.
+  `softlock-verify` is strictly read-only and can never manufacture success.
+- The snapshot vault stores a consistent Vector SQLite backup and a bounded
+  tarball containing other *regular* configuration files (excluding the live
+  database and WAL/SHM/journal). Additional configuration-file consistency is
+  NOT certified. Symlinks, special files, unsafe names and unbounded extra
+  files refuse capture. SHA-256 covers archive, DB, enabled list and metadata.
+- Backup operations now include `backup menu`, `tools`, `modules ID`,
+  `compare ID ID`, `limit N --apply` (1–20), and WebUI inspection/comparison.
+  The terminal uses a numbered fallback. Recursive fzf/bat discovery is
+  informational; root execution requires an operator-provided path and exact
+  SHA-256 via `GUARDIAN_BACKUP_FZF`, `GUARDIAN_BACKUP_FZF_SHA256`, or the BAT
+  counterparts, and a suitable static ARM64 ELF. There is no scheduler.
+- `backup restore ID` remains a **verified, read-only refusal**. No live SQLite
+  restore, offline swap, forced reboot or recovery-mode write is enabled by
+  this handoff. A future separately qualified, device-specific offline
+  restore transaction is required for actual activation; it cannot be
+  validated by host fixtures alone.
+
+Host tests can prove refusal and simulated behavior only. They cannot prove
+that actual Keyguard/UI input became available, that a Zygote restart is safe
+on this ROM, or that a root manager handles the process lifecycle correctly.
+
+---
+
+## v0.12.4 native job-metadata qualification
+
+Devtool v3.2 rejects a job marked `read_only=true` while declaring outputs. Guardian has two receipt-generating jobs: `host-qualification` and `early-boot-model`; these write files under `dist/` and therefore must declare `read_only=false`, while retaining their host-only and device-unqualified metadata. All genuinely read-only jobs remain read-only. The job output paths and the original safety/CI checks are preserved.
+
+Resolved on the source-bound feature branch: commit `7efd46b756862c97be078960db9774ddcdd79287` changes only `.devtool.toml` to mark both receipt-producing jobs as writable. The v0.12.4 delivery overlay excludes this already committed file and targets the new HEAD/tree. Native Devtool still validates the committed configuration and all scoped outputs; no gate is bypassed. The separate v0.12.4 implementation has not been applied by this handoff and requires native check and atomic apply.
+
+### Full GUARD-DT-022 packaging incident record
+
+## GUARD-DT-022 — v0.12.2 installer silently omitted required `lib/softlock.sh` (v0.12.3)
+
+- **Evidence:** Android KernelSU WebUI displayed `guardian.sh[16]: .: /data/adb/modules/lsposed_guardian/lib/softlock.sh: No such file or directory`; user-visible automatic protection reported unavailable. Audit of `tools/build.py` found `lib/softlock.sh` present in source but absent from the installable ZIP whitelist; `tools/runtime_parity.py` and root probe also omitted it.
+- **Affected:** Guardian CLI and boot monitor initialization, install ZIP builder/validator, runtime parity, tests, module version.
+- **Fix:** v0.12.3 adds the missing runtime library to the install ZIP; fails preflight, build and ZIP verification if a statically sourced `$MODDIR/lib/*.sh` dependency is absent; includes the library in active/staged parity checks; adds negative install and parity fixtures. Source overlay is exact v0.12.2 hash-bound.
+- **Status:** HOST VERIFIED (source tests, actual archive contents, replay and duplicate refusal); **OPEN** device installation, post-reboot active parity, boot monitor acceptance and real unattended soft-lock recovery. A directly copied library can restore CLI availability temporarily but does not repair the builder, earlier boot-service exit or the staged package.
+- **Devtool improvement:** maintain a repo-agnostic deployable runtime-dependency closure check in Devtool's packaging/installation abstractions rather than relying only on target-specific tests. Consider detecting sourced shell libraries missing from root module release archives.
+
+---
+
+## Appendix: v0.12.3 packaging incident and verification record
+
+# Guardian v0.12.3 — packaging hotfix (2026-10-30)
+
+## Incident
+
+The v0.12.2 repository added `lib/softlock.sh` and sourced it unconditionally from
+`guardian.sh` and `service.sh`. `tools/build.py` maintained a separate manual
+`INSTALL` list that omitted `lib/softlock.sh`. KernelSU therefore successfully
+installed an archive missing the required runtime file. Guardian commands failed
+and the boot service exited before protection checks. `runtime_parity.py` and its
+root probe omitted the same file and could miss the discrepancy.
+
+## Repair
+
+- Include `lib/softlock.sh` in the installable archive and hashes manifest.
+- Fail the source preflight, builder and ZIP verification if any static
+  `$MODDIR/lib/*.sh` source dependency is missing from the installable files.
+- Include `lib/softlock.sh` in both staged and active runtime parity inventories.
+- Test missing active and staged softlock files, and assert all runtime imports
+  are present in the actual install archive.
+- Bump module version to v0.12.3; no user policies or database files changed.
+
+## Acceptance criteria
+
+Before device install, inspect `dist/LSPosed-Guardian-v0.12.3.zip` and verify
+both `lib/softlock.sh` and `FILE_SHA256SUMS.txt` list the library. A successful
+`./devtoolw install` should then stage the corrected package. If KernelSU
+stages the update, the active version may remain broken until reboot. Confirm
+staged parity before reboot and active parity after reboot.
+
+The old historical sampler issue and full real-device softlock recovery
+acceptance are not closed by this packaging fix.

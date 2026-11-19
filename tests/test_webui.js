@@ -24,6 +24,11 @@ const outputs={report:JSON.stringify(report),modules:`PACKAGE UID STATUS\n------
  doctor:'Boot stable\nEnabled Modules: 8\n',qualification:'qualification=UNQUALIFIED\nactual_early_boot_restore_test=PASS_MANUAL_ONE_SHOT_RECEIPT',integrity:'baseline=legacy_header_only\n',
  'softlock-status':'softlock_enabled=0\nsoftlock_monitor=1\nsoftlock_grace_seconds=180\nsoftlock_decision=clear\nsoftlock_reason=boot_progress_absent_twice\nsoftlock_last_epoch=1793369477\n',
  'softlock-probe':'softlock_probe=no_boot_progress_window',
+ 'backup status':'backup_vault_enabled=1\nbackup_vault_mode=manual_only\nbackup_vault_count=2\nbackup_vault_limit=5\nbackup_vault_restore=unqualified_offline_only\n',
+ 'backup list':'snapshot=snap-20261118_120000_000001 status=verified\nsnapshot=snap-20261118_121000_000002 status=invalid',
+ 'backup inspect snap-20261118_120000_000001':'created_utc=2026-11-18\nmode=sqlite_online\nintegrity=verified',
+ 'backup compare snap-20261118_120000_000001 snap-20261118_120000_000001':'database_same=yes',
+ 'backup limit 3 --apply':'backup_vault_limit=3',
  'softlock-on --apply':'PASS_GUARDIAN_SOFTLOCK_ARMED',
  'softlock-off':'PASS_GUARDIAN_SOFTLOCK_DISARMED',
  'automatic-status':'auto_quarantine=0\nsafe_mode_armed=0\nauto_bootloop_reboot=0\nsafe_mode_owner=ASHREXCUE_DEFERRED\ncooldown_seconds=43200\ncrash_exclude_packages=com.openai.chatgpt,org.example.excluded\nhistory_monitor_enabled=1\npolicy=all_scoped\n',
@@ -105,6 +110,18 @@ async function exercise(bridge,allowConfirmation=true){
  assert.match(t.map.gates.textContent,/PASS_MANUAL_ONE_SHOT/);
  assert.equal(t.map.disarm.disabled,true);
  t.map.arm.listeners.click();await delay();await delay();assert.ok(t.calls.some(c=>c.endsWith('automatic-on --apply')));assert.equal(t.confirmCount(),4);
+ assert.equal(t.map['backup-list'].children.length,2,'verified and invalid backup rows');
+ t.map['backup-list'].children[0].children[2].listeners.click();await delay();
+ assert.ok(t.calls.some(c=>c.endsWith('backup inspect snap-20261118_120000_000001')));
+ t.map['backup-compare-a'].value='snap-20261118_120000_000001';
+ t.map['backup-compare-b'].value='snap-20261118_120000_000001';
+ t.map['backup-compare'].listeners.click();await delay();
+ assert.ok(t.calls.some(c=>c.endsWith('backup compare snap-20261118_120000_000001 snap-20261118_120000_000001')));
+ t.map['backup-retention'].value='3';t.map['backup-limit'].listeners.click();await delay();await delay();
+ assert.ok(t.calls.some(c=>c.endsWith('backup limit 3 --apply')));
+ t.map['backup-compare-a'].value='evil;reboot';t.map['backup-compare'].listeners.click();await delay();
+ assert.equal(t.calls.some(c=>c.includes('evil;reboot')),false);
+
  t.map['retry-sampler'].listeners.click();await delay();await delay();assert.ok(t.calls.some(c=>c.endsWith('history-capture')));
  t.map.analyze.listeners.click();await delay();assert.match(t.map.analysis.textContent,/INSUFFICIENT/);
  assert.match(t.map['analysis-summary'].children[1].children[1].textContent,/2/);
@@ -119,6 +136,7 @@ async function exercise(bridge,allowConfirmation=true){
  const bad=await exercise(()=> 'LAST_LINE_ONLY');assert.match(bad.map.message.textContent,/Cannot refresh Guardian/);
  const fail=await exercise((w,cmd,cb)=>{const key=cmd.split('guardian.sh ')[1];queueMicrotask(()=>w[cb](key==='modules'?1:0,outputs[key]||'',key==='modules'?'Vector unavailable':''));return null});
  assert.match(fail.map.modulewarning.textContent,/Command modules failed/);
+ console.log('PASS_WEBUI_V0124_BACKUP_MANAGEMENT_AND_COMMAND_ALLOWLIST');
  console.log('PASS_WEBUI_AUDIT_SCOPE_COUNTS_HISTORY_POLICY_NOTIFICATIONS');
  console.log('PASS_WEBUI_V012_PROTECTION_DASHBOARD');
  console.log('PASS_WEBUI_V012_SPLIT_COLLECTOR_AND_SAMPLER');

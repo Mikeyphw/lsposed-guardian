@@ -11,7 +11,13 @@ class SoftlockTests(unittest.TestCase):
         self.addCleanup(self.f.doCleanups)
         self.f.boot.write_text('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n')
         self.f.env['FAKE_SL_WINDOW'] = 'absent'
+        cfg=self.f.state/'config.conf'
+        cfg.write_text(cfg.read_text().replace('SOFTLOCK_MONITOR=0','SOFTLOCK_MONITOR=1'))
         (self.f.fakebin/'dumpsys').write_text('''#!/bin/sh
+if [ "$1" = activity ]; then
+  echo 'topResumedActivity=ActivityRecord{123 u0 com.android.launcher/.Launcher t1}'
+  exit 0
+fi
 case "$FAKE_SL_WINDOW" in
 visible) cat <<'EOF'
 WINDOW MANAGER WINDOWS (dumpsys window windows)

@@ -4,6 +4,7 @@ import os
 import pathlib
 import shutil
 import sqlite3
+import contextlib
 import subprocess
 import sys
 import tempfile
@@ -73,6 +74,13 @@ print('unknown command',args,file=sys.stderr); sys.exit(1)
         self.vector.chmod(0o755)
         self.vector_prop=self.base/'vector-module.prop'
         self.vector_prop.write_text('id=zygisk_vector\nversionCode=100\n')
+        (self.fakebin / "dumpsys").write_text("""#!/bin/sh
+case "$1" in
+  window) echo '  Window #0 Window{123 u0 Normal}:'; echo '    mAttrs=WM.LayoutParams{ty=1}'; echo '    isOnScreen=true' ;;
+  activity) echo 'topResumedActivity=ActivityRecord{123 u0 com.android.launcher/.Launcher t1}' ;;
+esac
+""")
+        (self.fakebin / "dumpsys").chmod(0o755)
         (self.fakebin / "getprop").write_text('#!/bin/sh\n[ "$1" = sys.boot_completed ] && echo 1\n')
         (self.fakebin / "pidof").write_text('''#!/bin/sh
 if [ "$1" = vectord ] && [ "${FAKE_VECTOR_RUNNING:-0}" = 1 ]; then echo 999; exit 0; fi
@@ -99,7 +107,7 @@ exit 1
 
         # Unit tests deliberately avoid persistent background collectors.
         self.state.mkdir(parents=True, exist_ok=True)
-        (self.state/'config.conf').write_text((ROOT/'config.defaults').read_text().replace('PASSIVE_CRASH_MONITOR=1', 'PASSIVE_CRASH_MONITOR=0').replace('RECOVERY_DEVICE_QUALIFIED=0','RECOVERY_DEVICE_QUALIFIED=1').replace('HISTORY_MONITOR=1','HISTORY_MONITOR=0'))
+        (self.state/'config.conf').write_text((ROOT/'config.defaults').read_text().replace('PASSIVE_CRASH_MONITOR=1', 'PASSIVE_CRASH_MONITOR=0').replace('RECOVERY_DEVICE_QUALIFIED=0','RECOVERY_DEVICE_QUALIFIED=1').replace('HISTORY_MONITOR=1','HISTORY_MONITOR=0').replace('SOFTLOCK_MONITOR=1','SOFTLOCK_MONITOR=0'))
         self.log_fixture = self.base/'logcat.txt'
         self.log_fixture.write_text('')
         (self.fakebin/'logcat').write_text('#!/bin/sh\n[ "${FAKE_LOGCAT_FAIL:-0}" = 1 ] && exit 42\ncat "$FAKE_LOGCAT_FILE"\n')
@@ -107,7 +115,7 @@ exit 1
         self.env['FAKE_LOGCAT_FILE'] = str(self.log_fixture)
 
     def _make_db(self, version):
-        with sqlite3.connect(self.db) as conn:
+        with contextlib.closing(sqlite3.connect(self.db)) as conn, conn:
             conn.execute('CREATE TABLE IF NOT EXISTS modules (module_pkg_name TEXT PRIMARY KEY, enabled INTEGER, apk_path TEXT DEFAULT "")')
             conn.execute('CREATE TABLE IF NOT EXISTS scope (mid INTEGER, app_pkg_name TEXT, user_id INTEGER)')
             conn.execute('CREATE TABLE IF NOT EXISTS configs (module_pkg_name TEXT, user_id INTEGER, data BLOB)')
@@ -128,7 +136,7 @@ exit 1
         self.assertTrue((self.state/'snapshots/last-good.db').is_file())
 
     def get_version(self):
-        with sqlite3.connect(self.db) as conn:
+        with contextlib.closing(sqlite3.connect(self.db)) as conn, conn:
             return conn.execute("SELECT enabled FROM modules WHERE module_pkg_name='mod.alpha'").fetchone()[0]
 
 
@@ -178,6 +186,18 @@ exit 1
         self.assertEqual((self.state/'boot/failures').read_text().strip(),'0')
         self.assertIn('mod.alpha',(self.state/'snapshots/last-good.enabled').read_text())
         self.assertIn('mode=OBSERVE',self.run_shell('guardian.sh','status'))
+
+    def test_unsupported_activity_probe_is_process_stable_not_ui_certified(self):
+        self.boot.write_text('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\n')
+        config=self.state/'config.conf'
+        config.write_text(config.read_text().replace('SOFTLOCK_MONITOR=0','SOFTLOCK_MONITOR=1'))
+        self.run_shell('post-fs-data.sh')
+        (self.fakebin/'dumpsys').write_text('#!/bin/sh\nexit 17\n')
+        self.run_shell('service.sh')
+        self.assertFalse((self.state/'boot/last-success-id').exists())
+        self.assertTrue((self.state/'boot/last-process-stable-id').exists())
+        self.assertFalse((self.state/'boot/pending-id').exists())
+        self.assertIn('softlock_decision=unverified',self.run_shell('guardian.sh','softlock-status'))
 
     def test_no_restore_when_unarmed_even_after_several_bad_boots(self):
         self.good_boot()

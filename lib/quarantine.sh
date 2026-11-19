@@ -20,12 +20,13 @@ q_unlock() {
 }
 q_inventory() {
   QI_JSON="$QROOT/inventory-$$.json"
-  vector --json modules ls > "$QI_JSON" 2>/dev/null &&
-    grep -Eq '"success"[[:space:]]*:[[:space:]]*true' "$QI_JSON" || {
-      rm -f "$QI_JSON"; echo 'Vector module inventory unavailable' >&2; return 1;
-    }
+  vc_json_inventory "$QI_JSON" || {
+    rm -f "$QI_JSON"
+    echo "Vector CLI capability unavailable: $VC_LAST_REASON (unknown versions are not automatically rejected)" >&2
+    return 1
+  }
   # package existence, including disabled state, is checked against all modules.
-  grep -Fq '"PACKAGE": "'"$1"'"' "$QI_JSON" || {
+  vc_inventory_has_package "$QI_JSON" "$1" || {
     rm -f "$QI_JSON"; echo "Module not found in Vector inventory: $1" >&2; return 1;
   }
   rm -f "$QI_JSON"
@@ -106,7 +107,7 @@ q_apply() {
     rm -f "$BEFORE"; q_cleanup_inventory; q_unlock; return 1
   fi
   # After pending is durable, failures stay pending and require explicit reconciliation.
-  if ! vector --json modules disable "$PK" > "$LOG_DIR/last-quarantine-toggle.json" 2>&1 ||
+  if ! vector_bounded 15 --json modules disable "$PK" > "$LOG_DIR/last-quarantine-toggle.json" 2>&1 ||
      ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' "$LOG_DIR/last-quarantine-toggle.json" ||
      ! q_inventory "$PK" || q_is_on "$PK" ||
      ! q_expect_only_module_change "$PK" "$BEFORE"; then
@@ -147,7 +148,7 @@ q_rollback() {
   if ! write_atomic "$QPENDING/$PK.rollback" "$Q_RB_HASH"; then
     rm -f "$Q_ROLLBACK_BEFORE"; q_cleanup_inventory; q_unlock; return 1
   fi
-  if ! vector --json modules enable "$PK" > "$LOG_DIR/last-quarantine-toggle.json" 2>&1 ||
+  if ! vector_bounded 15 --json modules enable "$PK" > "$LOG_DIR/last-quarantine-toggle.json" 2>&1 ||
      ! grep -Eq '"success"[[:space:]]*:[[:space:]]*true' "$LOG_DIR/last-quarantine-toggle.json" ||
      ! q_inventory "$PK" || ! q_is_on "$PK"; then
     echo 'Rollback could not be confirmed; active record retained' >&2

@@ -30,7 +30,7 @@ class BootTrialTests(unittest.TestCase):
              'GUARDIAN_VECTOR_CLI':str(self.bin/'vectorcli'),'GUARDIAN_VECTOR_MODULE_PROP':str(self.prop),
              'GUARDIAN_BOOT_ID_PATH':str(self.boot),'GUARDIAN_RESCUE_SCRIPT':str(self.rescue),
              'GUARDIAN_LOCK_DIR':str(self.base/'service-lock'),'PATH':str(self.bin)+':'+os.environ['PATH']}
-        (self.state/'config.conf').write_text((ROOT/'config.defaults').read_text().replace('PASSIVE_CRASH_MONITOR=1','PASSIVE_CRASH_MONITOR=0').replace('HISTORY_MONITOR=1','HISTORY_MONITOR=0'))
+        (self.state/'config.conf').write_text((ROOT/'config.defaults').read_text().replace('PASSIVE_CRASH_MONITOR=1','PASSIVE_CRASH_MONITOR=0').replace('HISTORY_MONITOR=1','HISTORY_MONITOR=0').replace('SOFTLOCK_MONITOR=1','SOFTLOCK_MONITOR=0'))
         (self.state/'boot').mkdir()
         (self.state/'boot/last-success-id').write_text(self.boot.read_text())
         bp=self.state/'boot-probe';bp.mkdir()

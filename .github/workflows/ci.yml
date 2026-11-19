@@ -39,6 +39,16 @@ jobs:
         run: python3 -S -m unittest discover -s tests -p test_parity_continuity.py -q
       - name: Personal automation safety fixtures (no device mutation)
         run: python3 -S -m unittest discover -s tests -p test_personal_auto.py -q
+      - name: Future Vector CLI contract and refuse-on-drift fixtures
+        run: python3 -S -m unittest discover -s tests -p test_vector_compat.py -q
+      - name: Normal boot and fail-closed softlock fixtures
+        run: python3 -S -m unittest discover -s tests -p test_softlock.py -q
+      - name: Keyguard and selective recovery fixtures
+        run: python3 -S -m unittest discover -s tests -p test_softlock_extended.py -q
+      - name: Manual vault and SQLite failure fixtures
+        run: python3 -S -m unittest discover -s tests -p test_backup_vault.py -q
+      - name: Read-only boot-order probe fixtures
+        run: python3 -S -m unittest discover -s tests -p test_boot_probe.py -q
       - name: Validate complete host-test evidence (Devtool DAG parity)
         run: python3 tools/qualify_host.py
       - name: Deterministic package

@@ -3,8 +3,10 @@
 // KernelSU exec's synchronous overload truncates output. Always use a named callback.
 const BASE='/data/adb/modules/lsposed_guardian/guardian.sh';
 const $=id=>document.getElementById(id);
-const READ_COMMANDS=new Set(['report','doctor','qualification','integrity','modules','history','history-changes','history-health','quarantine-status','quarantine-ledger','crash-audit','automatic-status','triage','collector-health','collect','notifications-status','softlock-status','softlock-probe','softlock-events']);
-const WRITE_COMMANDS=new Set(['automatic-on --apply','automatic-off','safe-mode-arm --apply','safe-mode-disarm','notifications-on --apply','notifications-off','notifications-test --apply','softlock-on --apply','softlock-off']);
+const READ_COMMANDS=new Set(['report','doctor','qualification','integrity','modules','history','history-changes','history-health','quarantine-status','quarantine-ledger','crash-audit','automatic-status','triage','collector-health','collect','notifications-status','softlock-status','softlock-probe','softlock-events','softlock-session-probe','vector-capabilities','backup status','backup list']);
+const WRITE_COMMANDS=new Set(['automatic-on --apply','automatic-off','safe-mode-arm --apply','safe-mode-disarm','notifications-on --apply','notifications-off','notifications-test --apply','softlock-on --apply','softlock-off','softlock-selective-on --apply','softlock-selective-off','backup-enable --apply','backup-disable','backup create --apply']);
+const RETENTION=new Set(['1','3','5','10','20']);
+const SNAP_ID_RE=/^snap-[0-9]{8}_[0-9]{6}_[0-9]{6}$/;
 const COOLDOWNS=new Set(['3600','10800','21600','43200','86400','172800','604800']);
 const MODULE_LINE=/^\s*([A-Za-z0-9_.-]+)\s+(\d+)\s+(enabled|disabled)\s*$/i;
 const PKG_RE=/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+$/;
@@ -30,7 +32,11 @@ function command(args){
   const moduleHistory=args.startsWith('history-module ')?args.slice(15):null;
   const exclusion=/^(exclusion-add|exclusion-remove) ([^ ]+) --apply$/.exec(args);
   const cooldown=/^cooldown-set ([0-9]+) --apply$/.exec(args);
-  if(!read&&!write&&!(scope&&safePkg(scope))&&!(plan&&safeTarget(plan))&&args!=='history-capture'&&!(structured&&safePkg(structured))&&!(moduleHistory&&safePkg(moduleHistory))&&!(exclusion&&safePkg(exclusion[2]))&&!(cooldown&&COOLDOWNS.has(cooldown[1])))return Promise.reject(new Error('Command not permitted by WebUI'));
+  const softlockSuspect=/^softlock-suspect ([^ ]+) --apply$/.exec(args);
+  const backupRead=/^backup (inspect|verify|modules) (snap-[0-9]{8}_[0-9]{6}_[0-9]{6})$/.exec(args);
+  const backupCompare=/^backup compare (snap-[0-9]{8}_[0-9]{6}_[0-9]{6}) (snap-[0-9]{8}_[0-9]{6}_[0-9]{6})$/.exec(args);
+  const backupLimit=/^backup limit ([0-9]+) --apply$/.exec(args);
+  if(!read&&!write&&!(scope&&safePkg(scope))&&!(plan&&safeTarget(plan))&&args!=='history-capture'&&!(structured&&safePkg(structured))&&!(moduleHistory&&safePkg(moduleHistory))&&!(exclusion&&safePkg(exclusion[2]))&&!(cooldown&&COOLDOWNS.has(cooldown[1]))&&!(softlockSuspect&&safePkg(softlockSuspect[1]))&&!backupRead&&!backupCompare&&!(backupLimit&&RETENTION.has(backupLimit[1])))return Promise.reject(new Error('Command not permitted by WebUI'));
   if(!window.ksu||typeof window.ksu.exec!=='function')return Promise.reject(new Error('KernelSU bridge unavailable. Open WebUI from KernelSU.'));
   return new Promise((resolve,reject)=>{
     const cb=`__guardianUiCallback${++state.callbacks}`;let done=false;
@@ -111,6 +117,22 @@ function parseLedger(raw){
  }
  return result.sort((a,b)=>b.epoch-a.epoch).slice(0,50);
 }
+function renderBackups(){
+ const root=$('backup-list');clear(root);
+ const parsed=String(state.raw['backup list']||'').split(/\r?\n/).map(x=>/^snapshot=(snap-[0-9]{8}_[0-9]{6}_[0-9]{6}) status=(verified|invalid)$/.exec(x)).filter(Boolean);
+ if(!parsed.length){add(root,'p','No verified snapshot inventory available.','empty');return;}
+ for(const match of parsed){
+  const id=match[1],ok=match[2]==='verified';
+  const entry=eventItem(id,ok?'SHA-256, SQLite and archive verified':'Invalid or incomplete; inspect from terminal','▤',ok?'good':'warn');
+  const btn=add(entry,'button','Inspect','btn-secondary');btn.type='button';btn.disabled=!ok;
+  btn.addEventListener('click',async()=>{
+   btn.disabled=true;text('backup-inspect','Reading verified snapshot…');
+   try{text('backup-inspect',await command('backup inspect '+id));}
+   catch(e){text('backup-inspect','Snapshot unavailable: '+errorText(e));}
+   finally{btn.disabled=false;}
+  });root.appendChild(entry);
+ }
+}
 function renderActivity(){
  const root=$('events-list'),recent=$('recent-activity');clear(root);clear(recent);
  const r=state.report||{},h=state.kv['history-health']||{},a=state.kv['automatic-status']||{},sl=state.kv['softlock-status']||{};
@@ -167,7 +189,8 @@ function renderProtection(){
  const bootLabel=!policyKnown?'Unavailable':sm?(bootOwner?'Armed · deferred to AshReXcue':reboot?'Armed · watchdog on':'Armed · no watchdog'):'Disabled';
  const softKnown=state.lastRefreshOk&&!state.raw['softlock-status']?.startsWith('Unavailable:')&&/^[01]$/.test(sl.softlock_enabled||'');
  const softOn=softKnown&&sl.softlock_enabled==='1',softDecision=sl.softlock_decision||'unavailable';
- const softBlocked=!sm||!reboot||bootOwner||!r.softlock_monitor_enabled;
+ const selective=sl.softlock_selective_enabled==='1';
+ const softBlocked=(selective?bootOwner:!sm||!reboot||bootOwner)||!r.softlock_monitor_enabled;
  const softLabel=!softKnown?'Unavailable':softOn?(softBlocked?'Armed · fallback unavailable':softDecision==='confirmed'?'Incident confirmed':softDecision==='clear'?'Armed · last boot check clear':'Armed · '+softDecision.replaceAll('_',' ')):'Disabled · detection only';
  text('softlock-protection',softLabel);text('softlock-state',!softKnown?'Unavailable':softOn?'Armed':'Off');
  statusClass($('softlock-protection'),softDecision==='confirmed'?'bad':!softKnown||softBlocked&&softOn?'warn':softOn?'good':null);
@@ -175,6 +198,24 @@ function renderProtection(){
  $('softlock-off').disabled=!softKnown||!softOn||state.writing||state.refreshing;
  $('softlock-probe').disabled=state.writing||state.refreshing;
  fields('softlock-details',[['Current boot decision',softDecision.replaceAll('_',' ')],['Evidence',sl.softlock_reason||'Not recorded'],['Detection',sl.softlock_monitor==='1'?'Enabled':'Disabled / unavailable'],['Grace period',sl.softlock_grace_seconds?sl.softlock_grace_seconds+' seconds':'Unknown'],['Last observation',when(sl.softlock_last_epoch)],['Rescue attempted',sl.softlock_recovery_attempt||'No recorded attempt'],['Automatic action',softOn?(softBlocked?'Blocked by fallback policy':'Armed for next boot'):'Disabled']]);
+ text('selective-state',!softKnown?'Unavailable':selective?'Armed':'Off');
+ fields('selective-details',[['Preapproved module',sl.softlock_suspect||'None'],['Attempt',sl.softlock_selective_attempt||'No recorded attempt'],['Result',sl.softlock_selective_result||'Not attempted'],['Framework restart',sl.softlock_restart_verification||'Not verified']]);
+ $('save-softlock-suspect').disabled=!softKnown||softOn||state.writing||state.refreshing;
+ $('selective-on').disabled=!softKnown||selective||!stable||!vectorReady||bootOwner||state.writing||state.refreshing;
+ $('selective-off').disabled=!softKnown||!selective||state.writing||state.refreshing;
+ $('session-probe').disabled=state.writing||state.refreshing;
+ const vc=state.kv['vector-capabilities']||{};
+ fields('vector-compatibility',[['Version code',vc.vector_version_code||'Unknown'],['Module identity',vc.vector_identity||'Unverified'],['CLI inventory contract',vc.vector_cli_inventory||'Unverified'],['Module toggles',vc.vector_module_toggle||'Blocked'],['Offline database restore',vc.vector_offline_restore||'Blocked']]);
+ const bv=state.kv['backup status']||{},bvKnown=/^[01]$/.test(bv.backup_vault_enabled||'');
+ text('backup-state',!bvKnown?'Unavailable':bv.backup_vault_enabled==='1'?'Enabled':'Off');
+ fields('backup-details',[['Snapshots stored',bv.backup_vault_count||'0'],['Retention',bv.backup_vault_limit||'5'],['SQLite verifier',bv.backup_vault_sqlite||'Unavailable'],['Restore',bv.backup_vault_restore||'Unqualified']]);
+ renderBackups();
+ $('backup-enable').disabled=!bvKnown||bv.backup_vault_enabled==='1'||state.writing||state.refreshing;
+ $('backup-disable').disabled=!bvKnown||bv.backup_vault_enabled!=='1'||state.writing||state.refreshing;
+ $('backup-create').disabled=!bvKnown||bv.backup_vault_enabled!=='1'||!stable||state.writing||state.refreshing;
+ $('backup-limit').disabled=!bvKnown||state.writing||state.refreshing;
+ $('backup-compare').disabled=!bvKnown||state.writing||state.refreshing;
+ $('backup-retention').value=RETENTION.has(bv.backup_vault_limit)?bv.backup_vault_limit:'5';
  text('softlock-raw',state.raw['softlock-status']||'Unavailable');
  text('crash-protection',crashLabel);statusClass($('crash-protection'),!policyKnown?'warn':on?(ready?'good':'warn'):null);
  text('boot-protection',bootLabel);statusClass($('boot-protection'),!policyKnown?'warn':sm&&bootOwner?'warn':sm?'good':null);
@@ -216,7 +257,7 @@ function renderProtection(){
 }
 async function refresh(){if(state.refreshing||state.writing)return;state.refreshing=true;$('refresh').disabled=true;text('message','Refreshing device state…');const request=++state.seq;
  try{const report=JSON.parse(await command('report'));if(!report||report.producer!=='lsposed-guardian')throw new Error('Unexpected diagnostic producer');state.report=report;state.lastRefreshOk=true;text('version',`v${report.version||'?'}`);
-  const jobs=['automatic-status','softlock-status','softlock-events','history-health','collector-health','notifications-status','modules','qualification','integrity','doctor','history','history-changes','quarantine-status','quarantine-ledger','crash-audit'];
+  const jobs=['automatic-status','softlock-status','softlock-events','vector-capabilities','backup status','backup list','history-health','collector-health','notifications-status','modules','qualification','integrity','doctor','history','history-changes','quarantine-status','quarantine-ledger','crash-audit'];
   const settled=await Promise.allSettled(jobs.map(cmd=>command(cmd)));if(request!==state.seq)return;let errors=[];
   settled.forEach((s,i)=>{const key=jobs[i];if(s.status==='fulfilled'){state.raw[key]=s.value;state.kv[key]=kv(s.value)}else{state.raw[key]=`Unavailable: ${errorText(s.reason)}`;state.kv[key]={};errors.push(key)}});
   try{state.modules=parseModules(state.raw.modules);state.loaded=true;state.expectedEnabled=Number(state.raw.doctor.match(/Enabled Modules:\s*(\d+)/i)?.[1]??NaN);if(!Number.isFinite(state.expectedEnabled))state.expectedEnabled=null}catch(e){state.loaded=false;state.modules=[];text('modulewarning',state.raw.modules?.startsWith('Unavailable:')?state.raw.modules:errorText(e))}
@@ -243,7 +284,7 @@ async function analyze(){const target=$('target').value.trim();if(!safeTarget(ta
 async function modify(args,heading,warning){
  if(state.writing||state.refreshing)return;
  if(typeof window.confirm!=='function'||!window.confirm(`${heading}\n\n${warning}`))return;
- state.writing=true;for(const id of ['arm','disarm','safe-arm','safe-disarm','softlock-on','softlock-off','softlock-probe','save-cooldown','add-exclusion','notifications-on','notifications-off','notifications-test'])$(id).disabled=true;
+ state.writing=true;for(const id of ['arm','disarm','safe-arm','safe-disarm','softlock-on','softlock-off','softlock-probe','selective-on','selective-off','session-probe','save-softlock-suspect','backup-enable','backup-disable','backup-create','backup-limit','backup-compare','save-cooldown','add-exclusion','notifications-on','notifications-off','notifications-test'])$(id).disabled=true;
  text('message',`Applying: ${heading}…`);
  try{const result=await command(args);state.lastActionNotice=`${heading}: command returned ${result.trim().split(/\r?\n/)[0]||'success'}. Effective policy refreshed below.`}
  catch(e){state.lastActionNotice=`${heading} failed: ${errorText(e)}. Check effective policy.`}
@@ -261,6 +302,13 @@ $('arm').addEventListener('click',()=>modify('automatic-on --apply','Enable auto
 $('disarm').addEventListener('click',()=>modify('automatic-off','Disarm all automatic actions','Future automatic responses will stop. Existing quarantine journals and safe-mode disable markers remain.'));
 $('softlock-on').addEventListener('click',()=>modify('softlock-on --apply','Enable post-boot rescue','This independently arms a bounded Vector fallback and watchdog without enabling crash quarantine. After persistent boot-progress evidence, Guardian may mark Vector disabled for the next boot and reboot once. The ROM must pass a read-only window compatibility probe.'));
 $('softlock-off').addEventListener('click',()=>modify('softlock-off','Disarm post-boot rescue','Detection remains read-only. Existing Vector disable markers and past recovery records will not be changed.'));
+$('save-softlock-suspect').addEventListener('click',()=>{const pkg=$('softlock-suspect').value.trim();if(!safePkg(pkg)){text('message','Invalid module package.');return}modify('softlock-suspect '+pkg+' --apply','Preapprove soft-lock suspect','Only this module is eligible for selective intervention. Selection is not proof of causality.');});
+$('selective-on').addEventListener('click',()=>modify('softlock-selective-on --apply','Arm selective soft-lock rescue','After sustained corroborated failure, Guardian may disable the approved module and restart Android Zygote once. This does NOT automatically arm a full reboot. Only enable after device compatibility testing.'));
+$('selective-off').addEventListener('click',()=>modify('softlock-selective-off','Disarm selective soft-lock rescue','Past quarantine records and incident latches remain intact.'));
+$('backup-enable').addEventListener('click',()=>modify('backup-enable --apply','Enable manual snapshot vault','Only manual, verified SQLite snapshots are enabled. No scheduling or live restores.'));
+$('backup-disable').addEventListener('click',()=>modify('backup-disable','Disable manual snapshot vault','Existing verified snapshots are retained.'));
+$('backup-create').addEventListener('click',()=>modify('backup create --apply','Create a configuration snapshot','Requires a stable boot, responsive Vector, and a consistent verified SQLite backup. No recovery action is armed.'));
+$('session-probe').addEventListener('click',async()=>{if(state.writing||state.refreshing)return;state.writing=true;try{const out=await command('softlock-session-probe');state.lastActionNotice='Read-only session probe: '+out.trim()}catch(e){state.lastActionNotice=errorText(e)}finally{state.writing=false;await refresh()}});
 $('softlock-probe').addEventListener('click',async()=>{if(state.writing||state.refreshing)return;state.writing=true;$('softlock-probe').disabled=true;try{const result=await command('softlock-probe');state.lastActionNotice='One-time read-only probe: '+result.trim()+'. This does not qualify a boot or arm recovery.'}catch(e){state.lastActionNotice='Soft-lock probe unavailable: '+errorText(e)}finally{state.writing=false;$('softlock-probe').disabled=false;await refresh()}});
 $('safe-arm').addEventListener('click',()=>modify('safe-mode-arm --apply','Enable bootloop fallback','If repeated boots fail, Guardian may disable the KernelSU Vector module on a later boot. AshReXcue owns boot protection when installed.'));
 $('safe-disarm').addEventListener('click',()=>modify('safe-mode-disarm','Disable bootloop fallback','This does not remove an already-created Vector disable marker.'));
@@ -271,5 +319,7 @@ $('notifications-test').addEventListener('click',()=>modify('notifications-test 
 $('save-cooldown').addEventListener('click',()=>{const s=$('cooldown').value;if(!COOLDOWNS.has(s))return;text('message','Invalid cooldown');modify(`cooldown-set ${s} --apply`,'Update quarantine cooldown',`Change the minimum interval between automatic interventions to ${Math.round(Number(s)/3600)} hours.`)});
 $('add-exclusion').addEventListener('click',()=>{const pkg=$('exclude-target').value.trim();if(!safePkg(pkg)){text('message','Invalid Android package identifier');return}modify(`exclusion-add ${pkg} --apply`,'Add crash exclusion',`Guardian will ignore ${pkg} crash events in future auto decisions.`)});
 $('retry-collector').addEventListener('click',async()=>{if(state.writing||state.refreshing)return;state.writing=true;$('retry-collector').disabled=true;try{const result=await command('collect');state.lastActionNotice='One-time crash collection completed: '+result.trim().slice(0,180)+'. Background collector health is separate.'}catch(e){state.lastActionNotice='Crash collection failed: '+errorText(e)}finally{state.writing=false;$('retry-collector').disabled=false;await refresh()}});
+$('backup-limit').addEventListener('click',()=>{const n=$('backup-retention').value;if(!RETENTION.has(n))return;text('message','Unsupported retention selection');modify('backup limit '+n+' --apply','Change backup retention','Keep the newest '+n+' verified manual snapshots. Invalid snapshots are preserved for investigation.');});
+$('backup-compare').addEventListener('click',async()=>{const a=$('backup-compare-a').value.trim(),b=$('backup-compare-b').value.trim();if(!SNAP_ID_RE.test(a)||!SNAP_ID_RE.test(b)){text('message','Enter two valid snapshot IDs');return}const el=$('backup-inspect');text('backup-inspect','Comparing verified snapshots…');try{text('backup-inspect',await command('backup compare '+a+' '+b));}catch(e){text('backup-inspect','Cannot compare: '+errorText(e));}});
 $('show-technical').addEventListener('click',()=>{$('technical').hidden=!$('technical').hidden;text('show-technical',$('technical').hidden?'Show technical details':'Hide technical details')});$('copy-diagnostics').addEventListener('click',copyDiagnostics);
 refresh();

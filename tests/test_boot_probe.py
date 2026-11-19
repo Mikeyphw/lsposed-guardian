@@ -37,6 +37,8 @@ class BootProbeTests(unittest.TestCase):
         defaults=(ROOT/'config.defaults').read_text()
         defaults=defaults.replace('PASSIVE_CRASH_MONITOR=1','PASSIVE_CRASH_MONITOR=0')
         defaults=defaults.replace('HISTORY_MONITOR=1','HISTORY_MONITOR=0')
+        # This suite qualifies boot-order receipts; UI health has a separate suite.
+        defaults=defaults.replace('SOFTLOCK_MONITOR=1','SOFTLOCK_MONITOR=0')
         self.state.joinpath('config.conf').write_text(defaults)
         self.state.joinpath('boot').mkdir()
         self.state.joinpath('boot/last-success-id').write_text(self.boot.read_text())

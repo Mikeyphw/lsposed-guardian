@@ -51,3 +51,13 @@ SOFTLOCK_MONITOR=1
 SOFTLOCK_GRACE_SECONDS=180
 # Requires separate explicit opt-in, safe-mode and bootloop watchdog policy.
 AUTO_SOFTLOCK=0
+
+# Optional preselected-suspect quarantine then one primary-Zygote restart.
+# Each must be explicitly enabled; no module selection by historical scope alone.
+SOFTLOCK_SELECTIVE=0
+SOFTLOCK_ZYGOTE_RESTART=0
+SOFTLOCK_SUSPECT=
+
+# Manual-only verified SQLite configuration snapshots; no background scheduler.
+BACKUP_VAULT_ENABLED=0
+BACKUP_VAULT_LIMIT=5
